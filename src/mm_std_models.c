@@ -903,6 +903,110 @@ return 0;
 
 /* 
  * This is the reaction source term for the species
+ * equation using an extent-of-reaction model,
+ * specifically for epoxy828/DEA reaction kinetics
+ */
+
+int
+epoxy_dea_new_species_source( int species_no,    /* Current species number */
+                           double *param)     /* pointer to user-defined parameter list */
+     
+{
+  int eqn, var, var_offset;
+  
+  dbl T;           /* temperature for rate constants */
+  dbl A1, E1, b;
+  dbl m, n, n1, n2, n3, n4;
+  dbl k1;
+  dbl alpha, alpha_m, alpha_m1, alpha_n, alpha_n1, dn_dT;
+  
+  /* Begin Execution */
+  
+  T = fv->T;
+  /* extent of reaction, alpha */
+  alpha = fv->c[species_no];
+  /*  if(alpha <= 0.) alpha = 0.0001; */
+  A1 = param[0];
+  E1 = param[1];
+  b  = param[2];
+  n1 = param[3];
+  n2 = param[4];
+  n3 = param[5];
+  n4 = param[6];
+  m  = param[7];
+
+  /* n  = 1.6; */
+  /* m  = 2.2; */
+
+  k1 = A1*exp(-E1/T);
+  
+  /* The new Epoxy-DEA system uses a variable exponent which depends on temperature via tanh
+  */
+  n  = n1+n2*tanh(n3*(T-n4));
+  dn_dT= n3*n2*(1-(tanh(n3*(T-n4)))*(tanh(n3*(T-n4))));
+
+  if(alpha > 0.0)
+    {
+      alpha_m = pow(alpha,m);
+      alpha_m1 = pow(alpha,m-1);
+    }
+  else
+    {
+      alpha_m = 0.;
+      alpha_m1 = 0.;
+    }
+
+  alpha_n = pow((1.-alpha),n);
+  alpha_n1 = pow((1.-alpha),n-1);
+  
+  /**********************************************************/
+  
+  /* Species piece */
+  eqn = MASS_FRACTION;
+  if ( pd->e[eqn] & T_SOURCE )
+    {
+      mp->species_source[species_no] = k1*(b+alpha_m)*alpha_n;
+      
+      /* Jacobian entries for source term */
+      var = MASS_FRACTION;
+      if (pd->v[var] )
+	{
+	  var_offset = MAX_VARIABLE_TYPES + species_no;
+	  mp->d_species_source[var_offset] = 
+	    (m*k1*alpha_m1)*alpha_n 
+	    - k1*(b+alpha_m)*n*alpha_n1;
+	}
+
+      var = TEMPERATURE;
+      if (pd->v[var] )
+	{
+	  if (T <= 0.)
+	    {
+	      mp->d_species_source[var] = 0.;
+	    }
+          else 
+	    {
+	      if (alpha < 0)
+		{
+		  mp->d_species_source[var] = 0.0;
+		}
+	      else
+		{
+		  mp->d_species_source[var] =
+		   k1*E1* (b+alpha_m)*alpha_n/(T*T)
+		    +n*k1*(b+alpha_m)*alpha_n1*dn_dT;
+		}
+	    }
+	}
+    }
+  return 0;
+}
+/*****************************************************************************/
+/* END of routine epoxy_new_dea_new_species_source */
+/*****************************************************************************/
+
+/* 
+ * This is the reaction source term for the species
  * equation using an extent-of-reaction model
  */
 

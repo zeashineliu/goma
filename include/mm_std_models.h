@@ -55,6 +55,10 @@ EXTERN int epoxy_dea_species_source /* mm_std_models.c                       */
 PROTO((int ,			/* species_no - Current species number       */
        double *));		/* param - pointer to user-defined parm list */
 
+EXTERN int epoxy_dea_new_species_source /* mm_std_models.c                       */
+PROTO((int ,			/* species_no - Current species number       */
+       double *));		/* param - pointer to user-defined parm list */
+
 EXTERN int epoxy_species_source /* mm_std_models.c                           */
 PROTO((int ,			/* species_no - Current species number       */
        double *));		/* param - user-defined parameter list       */

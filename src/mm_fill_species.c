@@ -10432,7 +10432,7 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	    
 	  }
       }
-      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA )
+      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA)
       {
 	err = epoxy_dea_species_source(w, mp->u_species_source[w]);
 	st->MassSource[w]    =  mp->species_source[w];
@@ -10459,7 +10459,34 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	  }
 	}
       }
-      else if (mp->SpeciesSourceModel[w]  == BUTLER_VOLMER)     /* added by KSC: 05/15/06 */
+      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA_NEW )
+      {
+	err = epoxy_dea_new_species_source(w, mp->u_species_source[w]);
+	st->MassSource[w]    =  mp->species_source[w];
+	if ( af->Assemble_Jacobian )
+	{
+	  var = TEMPERATURE;
+	  if(pd->v[var])
+	  {
+	    for ( j=0; j<ei->dof[var]; j++)
+	    {
+	      st->d_MassSource_dT[w][j]= mp->d_species_source[var]*bf[var]->phi[j];
+	    }
+	  }
+
+	  var = MASS_FRACTION;
+	  if (pd->v[MASS_FRACTION] )
+	  {
+	    var_offset = MAX_VARIABLE_TYPES + w;
+	    for ( j=0; j<ei->dof[var]; j++)
+	    {
+	      st->d_MassSource_dc[w][w] [j]=mp->d_species_source[var_offset]
+		  *bf[var]->phi[j];
+	    }
+	  }
+	}
+      }
+       else if (mp->SpeciesSourceModel[w]  == BUTLER_VOLMER)     /* added by KSC: 05/15/06 */
       {
         dbl dh[3], p[10];
         p[0] = w;

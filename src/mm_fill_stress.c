@@ -3314,7 +3314,7 @@ assemble_gradient(dbl tt,	/* parameter to vary time integration from
 		  dbl dt)	/* current time step size */
 {
   int dim;
-  int p, q, a, b;
+  int s, p, q, a, b;
   
   int eqn, var;
   int peqn, pvar;
@@ -3333,8 +3333,9 @@ assemble_gradient(dbl tt,	/* parameter to vary time integration from
   
   dbl advection;	
   dbl advection_a, advection_b;
+  dbl diffusion;
   dbl source;
-  
+ 
   /*
    * 
    * Note how carefully we avoid refering to d(phi[i])/dx[j] and refer instead
@@ -3489,6 +3490,22 @@ assemble_gradient(dbl tt,	/* parameter to vary time integration from
 		      advection *= wt_func * det_J * wt * h3;
 		      advection *= pd->etm[eqn][(LOG2_ADVECTION)];
 		    }
+
+		  diffusion = 0.;
+
+		  /* if( pd->e[eqn] & T_DIFFUSION ) */
+		  /*   { */
+		      for( p=0; p < dim ; p++) 
+		      	{
+		      	  diffusion += bf[eqn]->grad_phi[i][p]*fv->grad_G[p][a][b];
+		      	}
+
+		      diffusion *= det_J*wt*h3;
+		      /* diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)]; */
+		      diffusion *= 0.000075;
+		    /* } */
+		  
+
 		  
 		  /*
 		   * Source term...
@@ -3504,7 +3521,7 @@ assemble_gradient(dbl tt,	/* parameter to vary time integration from
 		    }
 		  
 		  lec->R[upd->ep[eqn]][i] += 
-		    advection  + source;      
+		    advection  + source + diffusion;      
 		}
 	    }
 	}
@@ -3648,9 +3665,23 @@ assemble_gradient(dbl tt,	/* parameter to vary time integration from
 					  source = phi_j  * det_J * h3 * wt_func * wt * pd->etm[eqn][(LOG2_SOURCE)];
 					}
 				    }
+
+				  diffusion = 0.;
+
+				  /* if( pd->e[eqn] & T_DIFFUSION ) */
+				    /* { */
+				      for( s=0; s < dim ; s++)
+				      	{
+				      	  if((a == p) && (b == q))
+				      	    diffusion += bf[eqn]->grad_phi[i][s]* bf[var]->grad_phi[j][s] ;
+				      	}
+				      diffusion *= det_J*wt*h3;
+				      /* diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)]; */
+				      diffusion *= 0.000075;
+				    /* } */
 				  
 				  lec->J[peqn][pvar][i][j] +=
-				    source;
+				    source + diffusion;
 				}
 			    }
 			}

@@ -198,6 +198,7 @@ extern int Num_Var_Init_Mat[MAX_NUMBER_MATLS];	/* number of variables to overwri
 #define BINGHAM        11
 #define SSM_BINGHAM    11
 #define EPOXY_DEA      12
+#define EPOXY_DEA_NEW  122
 #define SSM_EPOXY_DEA  12
 #define CARREAU_SUSPENSION 	13
 #define SSM_CARREAU_SUSPENSION 	13

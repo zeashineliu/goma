@@ -7644,8 +7644,40 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 
 	  SPF_DBL_VEC(endofstring(es), 5,  mat_ptr->u_species_source[species_no]);
 	}
+      else if ( !strcmp(model_name, "EPOXY_DEA_NEW") )
+	{
+	  SpeciesSourceModel = EPOXY_DEA_NEW;
+	  model_read = 1;
+	  mat_ptr->SpeciesSourceModel[species_no] = SpeciesSourceModel;
+	  if ( fscanf(imp, "%lf %lf %lf %lf  %lf  %lf  %lf %lf", 
+		      &a0, &a1, &a2, &a3, &a4, &a5, &a6, &a7)
+		   != 8 )
+	    {
+	      sr = sprintf(err_msg, 
+			   "Matl %s needs  8 constants for %s %s model.\n",
+			   pd_glob[mn]->MaterialName,
+			   "Species Source", "EPOXY_DEA_NEW");
+	      EH(-1, err_msg);
+	    }
+
+	  mat_ptr->u_species_source[species_no] = (dbl *)
+						 array_alloc(1,8,sizeof(dbl)); 
+
+	  mat_ptr->len_u_species_source[species_no] = 8;
+	  
+	  mat_ptr->u_species_source[species_no][0] = a0;  /* prefactor for k1. A1 */
+	  mat_ptr->u_species_source[species_no][1] = a1;  /* exponent for k1, E1 */ 
+	  mat_ptr->u_species_source[species_no][2] = a2;  /* b */
+	  mat_ptr->u_species_source[species_no][3] = a3;  /* n1 */
+	  mat_ptr->u_species_source[species_no][4] = a4;  /* n2 */
+	  mat_ptr->u_species_source[species_no][5] = a5;  /* n3 */
+	  mat_ptr->u_species_source[species_no][6] = a6;  /* n4 */
+	  mat_ptr->u_species_source[species_no][7] = a7;  /* m */
+
+	  SPF_DBL_VEC(endofstring(es), 8,  mat_ptr->u_species_source[species_no]);
+	}
       
-      else if ( !strcmp(model_name, "FOAM_EPOXY") )
+       else if ( !strcmp(model_name, "FOAM_EPOXY") )
 	{
 	  SpeciesSourceModel = FOAM_EPOXY;
 	  model_read = 1;
