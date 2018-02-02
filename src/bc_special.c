@@ -50,8 +50,8 @@
 #include "mm_as_structs.h"
 #include "mm_as.h"
 
-#include "mm_mp.h"
 #include "mm_mp_structs.h"
+#include "mm_mp.h"
  
 #include "mm_eh.h"
 
@@ -121,7 +121,7 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
   double dwall_velo_dx[MAX_PDIM][MDE],dvelo_dx[MAX_PDIM][MAX_PDIM];
   int found_wall_velocity;
   /* HKM - worried that jflag shouldn't be initialized all the way up here */
-  int jcnt, jflag=-1, matID_apply;
+  int jcnt, jflag=-1, local_node_id=-1, matID_apply;
   int GD_count; 
   int Gibbs = 1;
   int iapply = 0;
@@ -203,12 +203,16 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 	 GD_count to indicate that we've got the geometry here */
 
       if (    BC_Types[bc_input_id].BC_Name == PLANE_BC ||
-	      BC_Types[bc_input_id].BC_Name == SPLINE_BC ||
+              BC_Types[bc_input_id].BC_Name == SPLINE_BC ||
+              BC_Types[bc_input_id].BC_Name == FILLET_BC ||
+              BC_Types[bc_input_id].BC_Name == ROLL_FLUID_BC ||
 	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_BC ||	      
 	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_RS_BC ||      
  	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_PETROV_BC ||      
  	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_COLLOC_BC ||
 	      BC_Types[bc_input_id].BC_Name == TENSION_SHEET_BC ||	      	      
+	      BC_Types[bc_input_id].BC_Name == SOLID_FLUID_BC ||	      	      
+	      BC_Types[bc_input_id].BC_Name == SOLID_FLUID_RS_BC ||	      	      
 	      (BC_Types[bc_input_id].BC_Name == GD_CONST_BC ||
 	       BC_Types[bc_input_id].BC_Name == GD_LINEAR_BC ||
 	       BC_Types[bc_input_id].BC_Name == GD_INVERSE_BC ||
@@ -232,9 +236,12 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
  	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_PETROV_BC ||      
  	      BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_COLLOC_BC ||      
 	      BC_Types[bc_input_id].BC_Name == PLANE_BC ||
-	      BC_Types[bc_input_id].BC_Name == SPLINE_BC ||
+              BC_Types[bc_input_id].BC_Name == SPLINE_BC ||
+              BC_Types[bc_input_id].BC_Name == FILLET_BC ||
+              BC_Types[bc_input_id].BC_Name == ROLL_FLUID_BC ||
 	      BC_Types[bc_input_id].BC_Name == TENSION_SHEET_BC ||
-
+	      BC_Types[bc_input_id].BC_Name == SOLID_FLUID_BC ||
+	      BC_Types[bc_input_id].BC_Name == SOLID_FLUID_RS_BC ||
 	      (BC_Types[bc_input_id].BC_Name == GD_CONST_BC ||
 	       BC_Types[bc_input_id].BC_Name == GD_LINEAR_BC ||
 	       BC_Types[bc_input_id].BC_Name == GD_INVERSE_BC ||
@@ -351,13 +358,17 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 		 BC_Types[bc_input_id].BC_Name == KIN_LEAK_BC ||
 		 BC_Types[bc_input_id].BC_Name == KIN_ELECTRODEPOSITION_BC ||  /*  RSL 5/28/02  */
 		 BC_Types[bc_input_id].BC_Name == PLANE_BC ||
-		 BC_Types[bc_input_id].BC_Name == SPLINE_BC  || 
+                 BC_Types[bc_input_id].BC_Name == SPLINE_BC  || 
+                 BC_Types[bc_input_id].BC_Name == FILLET_BC  ||
+                 BC_Types[bc_input_id].BC_Name == ROLL_FLUID_BC  ||
 		 BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_BC ||      
 		 BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_RS_BC ||      
  		 BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_PETROV_BC ||  
  		 BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_COLLOC_BC ||
 		 BC_Types[bc_input_id].BC_Name == MESH_CONSTRAINT_BC ||
 		 BC_Types[bc_input_id].BC_Name == TENSION_SHEET_BC ||
+		 BC_Types[bc_input_id].BC_Name == SOLID_FLUID_BC ||
+		 BC_Types[bc_input_id].BC_Name == SOLID_FLUID_RS_BC ||
 		 ( (BC_Types[bc_input_id].BC_Name == GD_CONST_BC ||
 		    BC_Types[bc_input_id].BC_Name == GD_LINEAR_BC ||
 		    BC_Types[bc_input_id].BC_Name == GD_INVERSE_BC ||
@@ -438,6 +449,7 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 
 
                         CA_fselem[jcnt]=ielem;
+			local_node_id = id;
 			
 			for(p=0;p<ielem_dim;p++)
 			  {
@@ -457,6 +469,7 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 			if(!(variable_wall_normal)) 
 			  {
 			    CA_sselem[jcnt]=ielem; 
+			    local_node_id = id;
 			    for(p=0;p<ielem_dim;p++)
 			      {
 				ssnormal[jcnt][p]=BC_Types[j].BC_Data_Float[p+1];
@@ -472,25 +485,29 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 			  }
 			
 		      } else if((variable_wall_normal) && (BC_Types[bc_input_id].BC_Name == PLANE_BC ||
-							   BC_Types[bc_input_id].BC_Name == SPLINE_BC || 
-							   BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_BC ||	      
-							   BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_RS_BC ||	      
- 							   BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_PETROV_BC ||
- 							   BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_COLLOC_BC ||
-							   BC_Types[bc_input_id].BC_Name == MESH_CONSTRAINT_BC ||
-							   BC_Types[bc_input_id].BC_Name == TENSION_SHEET_BC ||
- 							   ( (BC_Types[bc_input_id].BC_Name == GD_CONST_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_LINEAR_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_INVERSE_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_PARAB_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_PARAB_OFFSET_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_CIRC_BC || 
-							      BC_Types[bc_input_id].BC_Name == GD_TIME_BC || 
-							      BC_Types[bc_input_id].BC_Name == GD_POLYN_BC ||
-							      BC_Types[bc_input_id].BC_Name == GD_TABLE_BC) 
-							     && 
-							     (BC_Types[bc_input_id].desc->equation == R_MESH_NORMAL || 
-							      BC_Types[bc_input_id].desc->equation == R_MESH2)
+                                                          BC_Types[bc_input_id].BC_Name == SPLINE_BC || 
+                                                          BC_Types[bc_input_id].BC_Name == FILLET_BC ||
+                                                      BC_Types[bc_input_id].BC_Name == ROLL_FLUID_BC ||
+                                    BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_BC ||	      
+				    BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_RS_BC ||	      
+ 				    BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_PETROV_BC ||
+ 				    BC_Types[bc_input_id].BC_Name == KIN_DISPLACEMENT_COLLOC_BC ||
+				    BC_Types[bc_input_id].BC_Name == MESH_CONSTRAINT_BC ||
+				    BC_Types[bc_input_id].BC_Name == TENSION_SHEET_BC ||
+				    BC_Types[bc_input_id].BC_Name == SOLID_FLUID_BC ||
+				    BC_Types[bc_input_id].BC_Name == SOLID_FLUID_RS_BC ||
+ 					   ( (BC_Types[bc_input_id].BC_Name == GD_CONST_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_LINEAR_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_INVERSE_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_PARAB_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_PARAB_OFFSET_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_CIRC_BC || 
+					      BC_Types[bc_input_id].BC_Name == GD_TIME_BC || 
+					      BC_Types[bc_input_id].BC_Name == GD_POLYN_BC ||
+					      BC_Types[bc_input_id].BC_Name == GD_TABLE_BC) 
+					     && 
+					     (BC_Types[bc_input_id].desc->equation == R_MESH_NORMAL || 
+					      BC_Types[bc_input_id].desc->equation == R_MESH2)
 							     ) ) ) {
 			
 		        /* However, we may have already gotten started, applied the
@@ -501,13 +518,16 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 			   entries in here for other contact angles. Hence only increment
 			   if GD_count indicates zero or one geometry condition*/
 
-                        if(GD_count <= 1) CA_sselem[jcnt]=ielem; 
+                        if(GD_count <= 1) 
+				{ 
+                                  CA_sselem[jcnt]=ielem; 
+			          local_node_id = id;
+				}
 			
 			/* from calc_surf_normal we get the normal of the fluid instead of
 			   the normal of the solid. We need to negate the normal and its
 			   derivatives to get what we really want! */
 	
-/*			BC_Types[bc_input_id].BC_Name == GD_PARAB_BC ||*/
 			for(p=0;p<ielem_dim;p++)
 			  {
 			    ssnormal[jcnt][p]=-fv->snormal[p];
@@ -541,6 +561,54 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 			      EH(-1,"Whoa!  frontal solver not equipped for split element CA conditions");
 			    }
 
+	    /*   make sure we are in the free surface element, etc.  */
+		  load_ei(CA_fselem[jflag], exo, 0);
+            /*
+	     * Load the field variable values at this node point
+	     */
+	    find_nodal_stu(local_node_id, ielem_type, &xi[0], &xi[1], &xi[2]);
+
+	    err = load_basis_functions( xi, bfd );
+	    EH( err, "problem from load_basis_functions");
+
+	    err = beer_belly();
+	    EH( err, "beer_belly");
+            
+	    err = load_fv();
+	    EH( err, "load_fv");
+            
+	    /* may want to load material properties here */
+	    
+	    /* calculate the determinant of the surface jacobian */
+	    surface_determinant_and_normal(ielem, iconnect_ptr, num_local_nodes, 
+					   ielem_dim - 1,
+					   (int) elem_side_bc->id_side,
+					   (int) elem_side_bc->num_nodes_on_side,
+					   (elem_side_bc->local_elem_node_id) );
+
+	    if (ielem_dim !=3) {
+	      calc_surf_tangent(ielem, iconnect_ptr, num_local_nodes, ielem_dim-1,
+				(int) elem_side_bc->num_nodes_on_side,
+			        (elem_side_bc->local_elem_node_id));
+	    }
+	    
+	    if (mp->SurfaceTensionModel != CONSTANT) 
+              {
+                load_surface_tension(dsigma_dx);
+                if( neg_elem_volume ) return(status);
+              }
+    
+	    if (TimeIntegration != STEADY) {
+	      for (icount = 0; icount < ielem_dim; icount++) {
+		x_dot[icount] = fv_dot->x[icount];
+	      }
+	    } else {
+	      for (icount = 0; icount < ielem_dim; icount++) {
+		x_dot[icount] = 0.0;
+	      }
+	    }
+	    	    
+	    do_LSA_mods(LSA_SURFACE);
 			  /* evaluate Gibbs inequality here with surface
 			   * normal and solid surface normal */
 
@@ -672,15 +740,20 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 			      memset( dwall_velo_dx,0,
 				      MAX_PDIM*MDE*sizeof(double) );
 			      for (i1 = 0; i1 < Num_BC; i1++) {
+
 				if( (BC_Types[i1].BC_Data_Int[0] == I &&
 				     (BC_Types[i1].BC_Name == VELO_TANGENT_BC ||
 				      BC_Types[i1].BC_Name == VELO_STREAMING_BC ||
 				      BC_Types[i1].BC_Name == VELO_TANGENT_USER_BC ||
 				      BC_Types[i1].BC_Name == VELO_SLIP_BC ||
-				      BC_Types[i1].BC_Name == VELO_SLIP_ROT_BC))
-				    || (BC_Types[i1].BC_Data_Int[2] == I &&
-					(BC_Types[i1].BC_Name == VELO_TANGENT_SOLID_BC || 
-					 BC_Types[i1].BC_Name == VELO_SLIP_SOLID_BC)) )
+				      BC_Types[i1].BC_Name == VELO_SLIP_ROT_BC ||
+				      BC_Types[i1].BC_Name == VELO_SLIP_FLUID_BC ||
+				      BC_Types[i1].BC_Name == VELO_SLIP_ROT_FLUID_BC ||
+				      BC_Types[i1].BC_Name == AIR_FILM_BC ||
+				      BC_Types[i1].BC_Name == AIR_FILM_ROT_BC))
+                	    || BC_Types[i1].BC_Name == VELO_TANGENT_SOLID_BC
+                           || (BC_Types[i1].BC_Data_Int[2] == I &&
+			 BC_Types[i1].BC_Name == VELO_SLIP_SOLID_BC) )
 				  {
 				    int mn;
 				    switch(BC_Types[i1].BC_Name)
@@ -691,49 +764,53 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 					found_wall_velocity = 1;
 					break;
 				      case VELO_SLIP_BC:
+				      case VELO_SLIP_FLUID_BC:
+				      case AIR_FILM_BC:
 					velo[0] = BC_Types[i1].BC_Data_Float[1];
 					velo[1] = BC_Types[i1].BC_Data_Float[2];
-					wall_velocity =-ssnrml[1]*velo[0] + ssnrml[0]*velo[1];
+					wall_velocity =ssnrml[1]*velo[0] - ssnrml[0]*velo[1];
 					for (i2=0;i2<ielem_dim;i2++)
 					  {
 					    for (i3=0;i3<ei->dof[MESH_DISPLACEMENT1];i3++)
 					      {
 						dwall_velo_dx[i2][i3] += 
-						  -dssnrml_dx[1][i2][i3]*velo[0] +
+						  dssnrml_dx[1][i2][i3]*velo[0] -
 						  dssnrml_dx[0][i2][i3]*velo[1];
 					      }
 					  }
 					found_wall_velocity = 1;
 					break;
 				      case VELO_SLIP_ROT_BC:
+				      case VELO_SLIP_ROT_FLUID_BC:
+				      case AIR_FILM_ROT_BC:
 					wall_velocity =BC_Types[i1].BC_Data_Float[1]*
-					  (-ssnrml[1]*(fv->x[1]-BC_Types[i1].BC_Data_Float[3]) 
-					   + ssnrml[0]*(fv->x[0]-BC_Types[i1].BC_Data_Float[2]));
+					  (ssnrml[1]*(fv->x[1]-BC_Types[i1].BC_Data_Float[3]) 
+					   - ssnrml[0]*(fv->x[0]-BC_Types[i1].BC_Data_Float[2]));
 					for (i2=0;i2<ielem_dim;i2++)
 					  {
 					    for (i3=0;i3<ei->dof[MESH_DISPLACEMENT1];i3++)
 					      {
 						dwall_velo_dx[i2][i3] += 
 						  BC_Types[i1].BC_Data_Float[1]*
-						  (-dssnrml_dx[1][i2][i3]*(fv->x[1]-BC_Types[i1].BC_Data_Float[3]) 
-						   + dssnrml_dx[0][i2][i3]*(fv->x[0]-BC_Types[i1].BC_Data_Float[2]));
+						  (dssnrml_dx[1][i2][i3]*(fv->x[1]-BC_Types[i1].BC_Data_Float[3]) 
+						   - dssnrml_dx[0][i2][i3]*(fv->x[0]-BC_Types[i1].BC_Data_Float[2]));
 					      }
 					  }
 					for (i3=0;i3<ei->dof[MESH_DISPLACEMENT1];i3++)
 					  {
 					    dwall_velo_dx[0][i3] += 
 					      BC_Types[i1].BC_Data_Float[1]*
-					      ssnrml[0]*bf[MESH_DISPLACEMENT1]->phi[i3];
+					      (-ssnrml[0])*bf[MESH_DISPLACEMENT1]->phi[i3];
 					    dwall_velo_dx[1][i3] += 
 					      BC_Types[i1].BC_Data_Float[1]*
-					      (-ssnrml[1])*bf[MESH_DISPLACEMENT1]->phi[i3];
+					      (ssnrml[1])*bf[MESH_DISPLACEMENT1]->phi[i3];
 					  }
 					found_wall_velocity = 1;
 					break;
 				      case VELO_TANGENT_USER_BC:
 					velo[0] = velo_vary_fnc(UVARY_BC, fv->x[0], fv->x[1], fv->x[2] , BC_Types[i1].u_BC, time_value);
 					velo[1] = velo_vary_fnc(VVARY_BC, fv->x[0], fv->x[1], fv->x[2] , BC_Types[i1].u_BC, time_value);
-					wall_velocity =-ssnrml[1]*velo[0] + ssnrml[0]*velo[1];
+					wall_velocity =ssnrml[1]*velo[0] - ssnrml[0]*velo[1];
 					dvelo_dx[0][0] = dvelo_vary_fnc_d1(UVARY_BC, fv->x[0], fv->x[1], fv->x[2] , BC_Types[i1].u_BC, time_value);
 					dvelo_dx[0][1] = dvelo_vary_fnc_d2(UVARY_BC, fv->x[0], fv->x[1], fv->x[2] , BC_Types[i1].u_BC, time_value);
 					dvelo_dx[1][0] = dvelo_vary_fnc_d1(VVARY_BC, fv->x[0], fv->x[1], fv->x[2] , BC_Types[i1].u_BC, time_value);
@@ -743,9 +820,9 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 					    for (i3=0;i3<ei->dof[MESH_DISPLACEMENT1];i3++)
 					      {
 						dwall_velo_dx[i2][i3] += 
-						  -dssnrml_dx[1][i2][i3]*velo[0] +
+						  dssnrml_dx[1][i2][i3]*velo[0] -
 						  dssnrml_dx[0][i2][i3]*velo[1] +
-						  (-ssnrml[1]*dvelo_dx[0][i2]+ssnrml[0]*dvelo_dx[1][i2])
+						  (ssnrml[1]*dvelo_dx[0][i2]-ssnrml[0]*dvelo_dx[1][i2])
 						  *bf[MESH_DISPLACEMENT1]->phi[i3];
 					      }
 					  }
@@ -833,9 +910,59 @@ apply_special_bc (struct Aztec_Linear_Solver_System *ams,
 						    theta_max,
 						    dewet,
 						    BC_Types[j_bc_id].BC_Name,
-						    dwall_velo_dx);
+						    dwall_velo_dx,
+                                                    local_node_id);
 			    }	/* if VELO_THETA bc		*/
 			  else EH(-1, "NO CA Condition applied ");
+#if 0
+		  load_ei(ielem, exo, 0);
+            /*
+	     * Load the field variable values at this node point
+	     */
+	    find_nodal_stu(id, ielem_type, &xi[0], &xi[1], &xi[2]);
+
+	    err = load_basis_functions( xi, bfd );
+	    EH( err, "problem from load_basis_functions");
+
+	    err = beer_belly();
+	    EH( err, "beer_belly");
+            
+	    err = load_fv();
+	    EH( err, "load_fv");
+            
+	    /* may want to load material properties here */
+	    
+	    /* calculate the determinant of the surface jacobian */
+	    surface_determinant_and_normal(ielem, iconnect_ptr, num_local_nodes, 
+					   ielem_dim - 1,
+					   (int) elem_side_bc->id_side,
+					   (int) elem_side_bc->num_nodes_on_side,
+					   (elem_side_bc->local_elem_node_id) );
+
+	    if (ielem_dim !=3) {
+	      calc_surf_tangent(ielem, iconnect_ptr, num_local_nodes, ielem_dim-1,
+				(int) elem_side_bc->num_nodes_on_side,
+			        (elem_side_bc->local_elem_node_id));
+	    }
+	    
+	    if (mp->SurfaceTensionModel != CONSTANT) 
+              {
+                load_surface_tension(dsigma_dx);
+                if( neg_elem_volume ) return(status);
+              }
+    
+	    if (TimeIntegration != STEADY) {
+	      for (icount = 0; icount < ielem_dim; icount++) {
+		x_dot[icount] = fv_dot->x[icount];
+	      }
+	    } else {
+	      for (icount = 0; icount < ielem_dim; icount++) {
+		x_dot[icount] = 0.0;
+	      }
+	    }
+	    	    
+	    do_LSA_mods(LSA_SURFACE);
+#endif
 			}	      
 		    }
 		}
@@ -1503,9 +1630,9 @@ apply_sharp_integrated_bc(
     }
     
   fplus = 0.8 * fmax;
-  if ( fplus > 1.e-4 * h_elem ) fplus = 1.e-4 * h_elem;
+  if ( fplus > FD_FACTOR * h_elem ) fplus = FD_FACTOR * h_elem;
   fminus = 0.8 * fmin;
-  if ( fminus < -1.e-4 * h_elem ) fminus = -1.e-4 * h_elem;
+  if ( fminus < -FD_FACTOR * h_elem ) fminus = -FD_FACTOR * h_elem;
   
 #if 0
   if ( fplus > -fminus )

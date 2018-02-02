@@ -107,6 +107,7 @@ static char rcsid[] =
 #ifdef KOMPLEX
 #include "azk_komplex.h"
 #endif
+#include "sl_amesos_interface.h"
 
 /*****************************************************************************/
 /*****************************************************************************/
@@ -1111,6 +1112,7 @@ int do_loca (Comm_Ex *cx,  /* array of communications structures */
       con.private_info.step_num = 0;
       err = nonlinear_solver_conwrap(x, (void *)&con, 0, 0.0, 0.0);
       solution_output_conwrap(1, x, 0.0, NULL, 0.0, NULL, 0.0, 0, err, &con);
+  printf("LOCA LSA ONLY HAS FINISHED: \n");
     }
 
   /* Otherwise, now call continuation library and return */
@@ -1347,7 +1349,7 @@ int nonlinear_solver_conwrap(double *x, void *con_ptr, int step_num,
   int nits=0; /* num_modnewt_its=0;  */
   int i, iAC;
   int iCC = 0, iTC = 0, iUC = 0, nCC = 0;
-  double theta;
+  double theta=0.0;
   double evol_local=0.0;
 #ifdef PARALLEL
   double evol_global=0.0;
@@ -1396,10 +1398,10 @@ int nonlinear_solver_conwrap(double *x, void *con_ptr, int step_num,
         nCC = cpcc[0].nCC;
         DPRINTF (stderr, "\n\tStep number: %4d of %4d (max)",
 			      step_num+1, cont->MaxPathSteps);
-        if (nCC > 1 || nUC > 0)
-          {
             theta = (lambda - cont->BegParameterValue)
                   / (cont->EndParameterValue - cont->BegParameterValue);
+        if (nCC > 1 || nUC > 0)
+          {
             DPRINTF (stderr, "\n\tAttempting solution at: theta = %g", theta);
           }
         else
@@ -1566,6 +1568,10 @@ int nonlinear_solver_conwrap(double *x, void *con_ptr, int step_num,
          DPRINTF(stderr, "%s: write_solution end call WIS\n", yo);
 #endif
        }
+
+    DPRINTF(stderr,
+            "\n\tStep accepted, theta (proportion complete) = %10.6e\n",
+            theta);
 
      /* Save continuation parameter values */
      if (passdown.method != LOCA_LSA_ONLY)
@@ -1895,6 +1901,18 @@ int linear_solver_conwrap(double *x, int jac_flag, double *tmp)
 
           break;
           
+        case AMESOS:
+
+             if( strcmp( Matrix_Format,"msr" ) == 0 ) {
+                 amesos_solve_msr( Amesos_Package, ams, x, xr, 1 );
+             } else if ( strcmp( Matrix_Format,"epetra" ) == 0 ) {
+                 amesos_solve_epetra(Amesos_Package, ams, x, xr);
+             } else {
+                 EH(-1," Sorry, only MSR and Epetra matrix formats are currently supported with the Amesos solver suite\n");
+             }
+        strcpy(stringer, " 1 ");
+        break;
+
         case MA28:
           /*
            * sl_ma28 keeps interntal static variables to determine whether
@@ -1998,7 +2016,7 @@ int linear_solver_conwrap(double *x, int jac_flag, double *tmp)
           }
         else
           {
-            printf("\tResolve time = %7.1e\n", (s_end - s_start) );
+            printf(" Resolve_time:%7.1e ", (s_end - s_start) );
           }
       }
       
@@ -3118,7 +3136,7 @@ void calc_scale_vec_conwrap(double *x, double *scale_vec, int numUnks)
 {
   static int sv_init = TRUE;	/* Initialize arrays on first call */
   int p=9, ip1=8;
-  int i, iunk, idof, index, ivd, index_adj;
+  int i, iunk, idof, index, ivd;
   double *sv_sum=NULL;		/* Running sum of each var type    */
   VARIABLE_DESCRIPTION_STRUCT *vdi;  /* Ptr to current vd struct   */
 
@@ -3162,13 +3180,16 @@ void calc_scale_vec_conwrap(double *x, double *scale_vec, int numUnks)
 	      index = vdi->List_Index;
 
   /* P1: The second and third pressure vars are stored at the back of the array */
-	      if (vdi->Ndof > 1 && idof > 0)
-                {
-	          index_adj = idof - 1;
-	          if (vdi->MatID > 0) index_adj += 2 * vdi->MatID; /* MatID starts @ 0 */
-	          index = Num_Var_Info_Records + index_adj;
-	        }
-	  
+  /* KT 02/19/2016: This logic causes memory error when using P1
+                    Commenting these lines do not appear to affect the performance
+                    of arc length continuation */
+//	      if (vdi->Ndof > 1 && idof > 0)
+//                {
+//	          index_adj = idof - 1;
+//	          if (vdi->MatID > 0) index_adj += 2 * vdi->MatID; /* MatID starts @ 0 */
+//	          index = Num_Var_Info_Records + index_adj;
+//	        }
+
   /* Assign sv_index and increment sv_count */
 	      passdown.sv_index[iunk] = index;
 	      passdown.sv_count[index] += 1.0;
@@ -3646,9 +3667,19 @@ static void print_final(double param, int step_num, int mat_fills,
   printf("\tNumber of steps            = %d\n", step_num+1);
   printf("\tNumber of Matrix fills     = %d\n", mat_fills);
   printf("\tNumber of Residual fills   = %d\n", res_fills);
+  fprintf(stderr,"\n"); 
+  fprintf(stderr,"CONTINUATION ROUTINE HAS FINISHED: \n");
+  fprintf(stderr,"\tEnding Parameter value     = %g\n", param);
+  fprintf(stderr,"\tNumber of steps            = %d\n", step_num+1);
+  fprintf(stderr,"\tNumber of Matrix fills     = %d\n", mat_fills);
+  fprintf(stderr,"\tNumber of Residual fills   = %d\n", res_fills);
   if (Linear_Solver == AZTEC)
-  printf("\tNumber of linear solve its = %d\n", linear_its);
-  printf("\n"); /*print_line("~", 80);*/
+       {
+        printf("\tNumber of linear solve its = %d\n", linear_its);
+        fprintf(stderr,"\tNumber of linear solve its = %d\n", linear_its);
+        }
+  printf("\n"); 
+  DPRINTF(stderr,"\n\n\t I will continue no more!\n\t No more continuation for you!\n");
 
 }
 /*****************************************************************************/

@@ -222,15 +222,15 @@ setup_pd()
 		  pd_glob[mn]->e[ce] |= T_SOURCE;
 		}
 	    }
-	  else if ((ce == R_FILL) || 
+	  else if ((ce == R_FILL) ||
 		   (ce == R_PHASE1) ||
 		   (ce == R_PHASE2) ||
 		   (ce == R_PHASE3) ||
 		   (ce == R_PHASE4) ||
 		   (ce == R_PHASE5) ||
-		   (ce == R_ACOUS_REYN_STRESS) ||  
-                   (ce == R_SHELL_LUBP) ||
-		   (ce == R_POR_SINK_MASS))
+		   (ce == R_ACOUS_REYN_STRESS) ||
+		   (ce == R_POR_SINK_MASS) ||
+                   (ce == R_SHELL_LUBP))
 	    {
 	      if ( pd_glob[mn]->etm[ce][(LOG2_MASS)] != 0. )
 		{
@@ -290,6 +290,13 @@ setup_pd()
 		  pd_glob[mn]->e[ce] |= T_DIFFUSION;
 		}
 	    }
+	  else if(ce == R_SHELL_CURVATURE2)
+	    {
+	      if ( pd_glob[mn]->etm[ce][(LOG2_DIFFUSION)] != 0. )
+		{
+		  pd_glob[mn]->e[ce] |= T_DIFFUSION;
+		}
+	    }
 	  else if(ce == R_SHELL_TENSION)
 	    {
 	      if ( pd_glob[mn]->etm[ce][(LOG2_DIFFUSION)] != 0. )
@@ -339,6 +346,13 @@ setup_pd()
                   pd_glob[mn]->e[ce] |= T_DIFFUSION;
                 }
             }
+          else if(ce == R_SHELL_NORMAL3)
+            {
+              if ( pd_glob[mn]->etm[ce][(LOG2_DIFFUSION)] != 0. )
+                {
+                  pd_glob[mn]->e[ce] |= T_DIFFUSION;
+                }
+            }
 	  else if(ce == R_SHEAR_RATE )
 	    {
 	      if ( pd_glob[mn]->etm[ce][(LOG2_ADVECTION)] != 0. )
@@ -371,6 +385,23 @@ setup_pd()
 		  pd_glob[mn]->e[ce] |= T_SOURCE;
 		}
 	    }
+
+	  else if ((ce == R_TFMP_MASS) ||
+	           (ce == R_TFMP_BOUND)) {
+	    if ( pd_glob[mn]->etm[ce][(LOG2_MASS)] != 0. ) {
+	      pd_glob[mn]->e[ce] |= T_MASS;
+	    }
+	    if ( pd_glob[mn]->etm[ce][(LOG2_ADVECTION)] != 0. ) {
+	      pd_glob[mn]->e[ce] |= T_ADVECTION;
+	    }
+	    if ( pd_glob[mn]->etm[ce][(LOG2_DIFFUSION)] != 0. ) {
+	      pd_glob[mn]->e[ce] |= T_DIFFUSION;
+	    }
+	    if ( pd_glob[mn]->etm[ce][(LOG2_SOURCE)] != 0. ) {
+	      pd_glob[mn]->e[ce] |= T_SOURCE;
+	    }
+	  }
+
 	  else if((ce == R_ENERGY )||
 		  (ce == R_MASS)||
 		  (ce == R_MESH1)||

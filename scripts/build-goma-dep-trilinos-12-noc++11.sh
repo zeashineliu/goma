@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+#  This software is distributed under the GNU General Public License.
+#
 # Goma dependency build script
 #
 # 2014, July: Created by Cory Miner based off of notes by Scott Roberts
@@ -42,7 +44,17 @@ if [ -z "$1" ]
     exit 1
 fi
 
-GOMA_LIB=$1
+mkdir -p $1
+
+# check that we were able to make that directory
+if [ ! -d $1 ] 
+    then
+    echo "ERROR: could not create directory $1"
+    exit 1
+fi
+        
+cd $1
+GOMA_LIB=`pwd`
 export GOMA_LIB
 
 OWNER=$USER
@@ -78,7 +90,7 @@ export MAKE_JOBS
 
 ARCHIVE_NAMES=("arpack96.tar.gz" \
 "patch.tar.gz" \
-"blas.tgz" \
+"blas-3.6.0.tgz" \
 "cmake-2.8.12.2.tar.gz" \
 "hdf5-1.8.15.tar.gz" \
 "lapack-3.2.1.tgz" \
@@ -88,7 +100,7 @@ ARCHIVE_NAMES=("arpack96.tar.gz" \
 "sparse.tar.gz" 
 "superlu_dist_2.3.tar.gz" \
 "y12m-1.0.tar.gz" \
-"trilinos-12.2.1-Source.tar.bz2" \
+"trilinos-12.2.2-Source.tar.bz2" \
 "scalapack-2.0.2.tgz" \
 "MUMPS_4.10.0.tar.gz" \
 "SuiteSparse-4.4.4.tar.gz" \
@@ -96,7 +108,7 @@ ARCHIVE_NAMES=("arpack96.tar.gz" \
 
 ARCHIVE_MD5SUMS=("fffaa970198b285676f4156cebc8626e" \
 "14830d758f195f272b8594a493501fa2" \
-"5e99e975f7a1e3ea6abcad7c6e7e42e6" \
+"0af668589d693beb91ad49ddd742a002" \
 "17c6513483d23590cbce6957ec6d1e66" \
 "03cccb5b33dbe975fdcd8ae9dc021f24" \
 "a3202a4f9e2f15ffd05d15dab4ac7857" \
@@ -106,7 +118,7 @@ ARCHIVE_MD5SUMS=("fffaa970198b285676f4156cebc8626e" \
 "1566d914d1035ac17b73fe9bc0eed02a" \
 "8cf8cb964bb25ff6981f994b7e794f29" \
 "eed01310baca61f22fb8a88a837d2ae3" \
-"760f14cbce482b4b9a41d1c18297b531" \
+"90bbb175505b55878401a51a1d17463c" \
 "2f75e600a2ba155ed9ce974a1c4b536f" \
 "959e9981b606cd574f713b8422ef0d9f" \
 "e0af74476935c9ff6d971df8bb6b82fc" \
@@ -114,21 +126,39 @@ ARCHIVE_MD5SUMS=("fffaa970198b285676f4156cebc8626e" \
 
 ARCHIVE_URLS=("http://www.caam.rice.edu/software/ARPACK/SRC/arpack96.tar.gz" \
 "http://www.caam.rice.edu/software/ARPACK/SRC/patch.tar.gz" \
-"http://www.netlib.org/blas/blas.tgz" \
+"http://www.netlib.org/blas/blas-3.6.0.tgz" \
 "http://www.cmake.org/files/v2.8/cmake-2.8.12.2.tar.gz" \
 "http://www.hdfgroup.org/ftp/HDF5/releases/hdf5-1.8.15/src/hdf5-1.8.15.tar.gz" \
 "http://www.netlib.org/lapack/lapack-3.2.1.tgz" \
 "ftp://ftp.unidata.ucar.edu/pub/netcdf/netcdf-4.3.3.1.tar.gz" \
 "http://www.open-mpi.org/software/ompi/v1.6/downloads/openmpi-1.6.4.tar.gz" \
 "http://glaros.dtc.umn.edu/gkhome/fetch/sw/parmetis/OLD/ParMetis-3.1.1.tar.gz" \
-"http://sourceforge.net/projects/sparse/files/sparse/sparse1.4b/sparse1.4b.tar.gz/download" \
+"http://downloads.sourceforge.net/project/sparse/sparse/sparse1.4b/sparse1.4b.tar.gz" \
 "http://crd-legacy.lbl.gov/~xiaoye/SuperLU/superlu_dist_2.3.tar.gz" \
 "http://sisyphus.ru/cgi-bin/srpm.pl/Branch5/y12m/getsource/0" \
-"http://trilinos.csbsju.edu/download/files/trilinos-12.2.1-Source.tar.bz2" \
+"https://trilinos.org/oldsite/download/files/trilinos-12.2.2-Source.tar.bz2" \
 "http://www.netlib.org/scalapack/scalapack-2.0.2.tgz" \
 "http://mumps.enseeiht.fr/MUMPS_4.10.0.tar.gz" \
 "http://faculty.cse.tamu.edu/davis/SuiteSparse/SuiteSparse-4.4.4.tar.gz" \
 "http://downloads.sourceforge.net/project/matio/matio/1.5.2/matio-1.5.2.tar.gz")
+
+ARCHIVE_DIR_NAMES=("ARPACK" \
+"ARPACK" \
+"BLAS-3.6.0" \
+"cmake-2.8.12.2" \
+"hdf5-1.8.15" \
+"lapack-3.2.1" \
+"netcdf-4.3.3.1" \
+"openmpi_1.6.4" \
+"ParMetis-3.1.1" \
+"sparse" \
+"SuperLU_DIST_2.3" \
+"y12m-1.0" \
+"trilinos-12.2.2-Source" \
+"scalapack-2.0.2" \
+"MUMPS_4.10.0" \
+"SuiteSparse" \
+"matio-1.5.2")
 
 SEACAS_LINUX_PATCH="14c14
 < /* #define GCC4GFORTRAN 1 */
@@ -163,7 +193,7 @@ read -d '' SCALAPACK_PATCH << "EOF"
 < BLASLIB       = -lblas
 < LAPACKLIB     = -llapack
 ---
-> BLASLIB       = -L$(GOMA_LIB)/BLAS -lblas
+> BLASLIB       = -L$(GOMA_LIB)/BLAS-3.6.0 -lblas
 > LAPACKLIB     = -L$(GOMA_LIB)/lapack-3.2.1 -llapack
 EOF
 SCALAPACK_PATCH=${SCALAPACK_PATCH/__GOMA_LIB__/$GOMA_LIB}
@@ -213,7 +243,7 @@ read -d '' MUMPS_PATCH << "EOF"
 83c85
 < LIBBLAS = -L/local/BLAS -lblas
 ---
-> LIBBLAS = -L$(GOMA_LIB)/BLAS -lblas
+> LIBBLAS = -L$(GOMA_LIB)/BLAS-3.6.0 -lblas
 EOF
 MUMPS_PATCH=${MUMPS_PATCH/__GOMA_LIB__/$GOMA_LIB}
 
@@ -294,7 +324,7 @@ read -d '' SUITESPARSE_CONFIG_PATCH << "EOF"
 ---
 > #  BLAS = -lopenblas
 149a152,154
-> BLAS = -L$(GOMA_LIB)/BLAS -lblas -lgfortran
+> BLAS = -L$(GOMA_LIB)/BLAS-3.6.0 -lblas -lgfortran
 > LAPACK = -L$(GOMA_LIB)/lapack-3.2.1 -llapack -lgfortran
 > 
 234c239
@@ -310,7 +340,7 @@ read -d '' LAPACK_PATCH << "EOF"
 54c54
 < BLASLIB      = ../../blas$(PLAT).a
 ---
-> BLASLIB      = __GOMA_LIB3__/BLAS/blas_LINUX.a
+> BLASLIB      = __GOMA_LIB3__/BLAS-3.6.0/blas_LINUX.a
 
 EOF
 LAPACK_PATCH=${LAPACK_PATCH/__GOMA_LIB3__/$GOMA_LIB}
@@ -328,7 +358,7 @@ read -d '' SUPERLU_PATCH << "EOF"
 28c28
 < BLASLIB       = -lessl
 ---
-> BLASLIB       = __GOMA_LIB2__/BLAS -lessl
+> BLASLIB       = __GOMA_LIB2__/BLAS-3.6.0 -lessl
 31,32c31,32
 < METISLIB        = -L/project/projectdirs/sparse/xiaoye/parmetis-3.1/64 -lmetis
 < PARMETISLIB   = -L/project/projectdirs/sparse/xiaoye/parmetis-3.1/64 -lparmetis
@@ -406,11 +436,17 @@ for i in ${ARCHIVE_NAMES[@]}; do
         mychecksum $i $count
     fi
     cd ..
-    count=$(( $count + 1 ))
 
-    if ! tar tf $i &> /dev/null; then
-      tar -xf tars/$i
+
+    if [ -d ${ARCHIVE_DIR_NAMES[count]} ]
+    then
+	echo "already extracted ${i}"
+    else
+	if ! tar tf $i &> /dev/null; then
+	    tar -xf tars/$i
+	fi
     fi
+    count=$(( $count + 1 ))
     cd tars
 done
 #continue_check
@@ -569,7 +605,7 @@ fi
 
 #continue_check
  #make BLAS
-cd $GOMA_LIB/BLAS
+cd $GOMA_LIB/BLAS-3.6.0
 if [ -f libblas.a ]
 then
     echo "BLAS already built"
@@ -609,7 +645,7 @@ if [ -f lib/libsuperludist.a ]
 then
     echo "SuperLU_DIST already built"
 else
-    make PLAT= DSuperLUroot=$GOMA_LIB/SuperLU_DIST_2.3 BLASLIB="$GOMA_LIB/BLAS/blas_LINUX.a" METISLIB="-L$GOMA_LIB/ParMetis-3.1.1 -lmetis" PARMETISLIB="-L$GOMA_LIB/ParMetis-3.1.1 -lparmetis" ARCHFLAGS=-rc RANLIB=echo CC=mpicc CFLAGS=-D_SP NOOPTS= FORTRAN=gfortran FFLAGS="-O3 -Q" LOADER=mpicxx LOADOPTS=-lgfortran CDEFS="-DAdd_"
+    make PLAT= DSuperLUroot=$GOMA_LIB/SuperLU_DIST_2.3 BLASLIB="$GOMA_LIB/BLAS-3.6.0/blas_LINUX.a" METISLIB="-L$GOMA_LIB/ParMetis-3.1.1 -lmetis" PARMETISLIB="-L$GOMA_LIB/ParMetis-3.1.1 -lparmetis" ARCHFLAGS=-rc RANLIB=echo CC=mpicc CFLAGS=-D_SP NOOPTS= FORTRAN=gfortran FFLAGS="-O3 -Q" LOADER=mpicxx LOADOPTS=-lgfortran CDEFS="-DAdd_"
     cd lib/
     cp libsuperlu_dist_2.3.a libsuperludist.a
     cd ..
@@ -733,9 +769,9 @@ fi
 
 #continue_check
 #make trilinos
-rm -rf $GOMA_LIB/trilinos-12.2.1-Temp
-mkdir $GOMA_LIB/trilinos-12.2.1-Temp
-cd $GOMA_LIB/trilinos-12.2.1-Temp
+rm -rf $GOMA_LIB/trilinos-12.2.2-Temp
+mkdir $GOMA_LIB/trilinos-12.2.2-Temp
+cd $GOMA_LIB/trilinos-12.2.2-Temp
 
 rm -f CMakeCache.txt
 
@@ -753,7 +789,7 @@ export PATH=$GOMA_LIB/cmake-2.8.12.2/bin:$PATH
 MPI_LIBS="-LMPI_BASE_DIR/lib -lmpi_f90 -lmpi_f77 -lmpi"
 SEACAS_LIBS="-L${GOMA_LIB}/hdf5-1.8.15/lib -lhdf5_hl -lhdf5 -lz -lm"
 # Install directory
-TRILINOS_INSTALL=$GOMA_LIB/trilinos-12.2.1-Built
+TRILINOS_INSTALL=$GOMA_LIB/trilinos-12.2.2-Built
 #continue_check
 
 
@@ -797,7 +833,7 @@ cmake \
 -D LAPACK_LIBRARY_DIRS=$GOMA_LIB/lapack-3.2.1 \
 -D LAPACK_LIBRARY_NAMES="lapack" \
 -D TPL_ENABLE_BLAS:BOOL=ON \
--D BLAS_LIBRARY_DIRS=$GOMA_LIB/BLAS \
+-D BLAS_LIBRARY_DIRS=$GOMA_LIB/BLAS-3.6.0 \
 -D BLAS_LIBRARY_NAMES="blas" \
 -D CMAKE_INSTALL_PREFIX:PATH=$TRILINOS_INSTALL \
 -D Trilinos_EXTRA_LINK_FLAGS:STRING="$FORTRAN_LIBS $SEACAS_LIBS $MPI_LIBS" \
@@ -836,7 +872,7 @@ cmake \
 -D Amesos_ENABLE_UMFPACK:BOOL=ON \
 -D Amesos_ENABLE_MUMPS:BOOL=ON \
 $EXTRA_ARGS \
-$GOMA_LIB/trilinos-12.2.1-Source
+$GOMA_LIB/trilinos-12.2.2-Source
 
 
 

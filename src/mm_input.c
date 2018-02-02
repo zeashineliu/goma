@@ -302,7 +302,8 @@ count_parameters(const char string[])
   i = 0;
   state = np = 0;
 
-  while((ch = string[i]) != '\0'  && ch != '\n') {
+  /* '#' and '$' denote start of comment */
+  while((ch = string[i]) != '\0'  && ch != '\n' && ch != '#' && ch != '$') {
     i++;
     if(ch == ' '  || ch == '\t' || ch == ',' || ch == '\f' ||
        ch == '\r' || ch == '\v' || ch == '=' ) {
@@ -923,6 +924,39 @@ rd_genl_specs(FILE *ifp,
     } else {
       Guess_Flag = 0;
       ECHO("Initial Guess card not read correctly", echo_file);
+    }
+
+  iread = look_for_optional(ifp,"Conformation Map",input,'=');
+  if(iread == 1) 
+    {
+      (void) read_string(ifp,input,'\n');
+      strip(input);
+      nargs = sscanf(input, "%s %s %s", first_string, second_string, third_string);
+      if ( nargs == 0 )
+        {
+          EH(-1, "Found zero arguments for Conformation Map");
+        }
+      else if ( nargs == 1 )
+        {
+          if (strcasecmp(first_string, "no") == 0 )
+            {
+              Conformation_Flag = 0;
+            }
+          else if (strcasecmp(first_string, "yes") == 0 )
+            {
+              Conformation_Flag = 1;
+            }
+
+          SPF(echo_string,eoformat,"Conformation Map", first_string); ECHO(echo_string, echo_file);
+
+        }
+      else  
+        {
+          fprintf(stderr,"%s:\tUnknown conformation map (%s)\n", yo, input);
+          exit(-1);
+        }
+    } else {
+      Conformation_Flag = 0;
     }
 
   /*
@@ -1562,6 +1596,9 @@ rd_timeint_specs(FILE *ifp,
 	  EH( -1, "error reading Initial Time");
 	}
       SPF(echo_string,"%s = %.4g","Initial Time",tran->init_time); ECHO(echo_string, echo_file);
+      if( (TimeMax - tran->init_time) <= 0.0 ) {
+      	EH( -1, "Your maximum time is less than or equal to your initial time!"); // a condition which may result in NAN's in the esp_dot struct
+      }
     }
 
     tran->const_dt_after_failure = 0.;
@@ -2288,10 +2325,14 @@ rd_levelset_specs(FILE *ifp,
 
       if( strcmp(input, "GRID_SEARCH") == 0 )
         {
+	  int err;
 	  EH(-1,"The Level Set Search Option : GRID_SEARCH is not functioning at this time.\n");
 
           ls->Search_Option = GRID_SEARCH;
-          fscanf(ifp,"%d", &(ls->Grid_Search_Depth));
+          err = fscanf(ifp,"%d", &(ls->Grid_Search_Depth));
+	  if (err != 1) {
+	    EH(-1, "Expected to read one int for GRID_SEARCH");
+	  }
 
 	  SPF(endofstring(echo_string)," %d",ls->Grid_Search_Depth);
         }
@@ -3254,6 +3295,19 @@ rd_track_specs(FILE *ifp,
 	}
       cont->print_freq = print_freq;
 	  SPF(echo_string,"%s = %d", input, print_freq); ECHO(echo_string,echo_file);
+
+      cont->fix_freq = 0;
+      if (Num_Proc > 1) {
+        iread = look_for_optional(ifp,"Continuation Fix Frequency",input,'=');
+        if (iread == 1) {
+          cont->fix_freq = read_int(ifp, "Continuation Fix Frequency");
+          if (cont->fix_freq < 0) {
+            EH(-1, "Expected Fix Frequency > 0");
+          }
+          SPF(echo_string, "%s = %d", "Continuation Fix Frequency", cont->fix_freq); ECHO(echo_string, echo_file);
+        }
+      }
+
 
       if (Continuation == LOCA)
         {
@@ -4748,6 +4802,7 @@ rd_ac_specs(FILE *ifp,
                 if( fscanf(ifp,"%lf",&augc_initial_value[iAC]) != 1 )
                       {
           fprintf(stderr,"%s:\tError reading augc_initial_value[%d]\n", yo, iAC);
+          fprintf(stderr,"\tAdd AC value after initialize?\n");
                       }
               }
         }
@@ -5785,6 +5840,9 @@ rd_solver_specs(FILE *ifp,
   } else if (strcmp(Matrix_Solver, "aztecoo") == 0) {
     Linear_Solver = AZTECOO;
     is_Solver_Serial = FALSE;
+  } else if (strcmp(Matrix_Solver, "stratimikos") == 0) {
+    Linear_Solver = STRATIMIKOS;
+    is_Solver_Serial = FALSE;
   } else {
     Linear_Solver = AZTEC;
     is_Solver_Serial = FALSE;
@@ -5872,6 +5930,21 @@ rd_solver_specs(FILE *ifp,
     // Set gmres as the default AztecOO Solver
     SPF(echo_string, def_form, search_string, "gmres", default_string);
     strcpy(AztecOO_Solver, "gmres");
+    ECHO(echo_string, echo_file);
+  }
+
+  strcpy(search_string, "Stratimikos File");
+  iread = look_for_optional(ifp, search_string, input, '=');
+  if (iread == 1) {
+    read_string(ifp, input, '\n');
+    strip(input);
+    strcpy(Stratimikos_File, input);
+    SPF(echo_string, eoformat, search_string, input);
+    ECHO(echo_string, echo_file);
+  } else {
+    // Set stratimikos.xml as defualt stratimikos file
+    SPF(echo_string, def_form, search_string, "stratimikos.xml", default_string);
+    strcpy(Stratimikos_File, "stratimikos.xml");
     ECHO(echo_string, echo_file);
   }
 
@@ -6552,6 +6625,7 @@ rd_solver_specs(FILE *ifp,
   
   /* look for optional flags specifying dependencies to ignore */
   {
+    int err;
     int eq, var;
     
     for (eq=0; eq<MAX_VARIABLE_TYPES; eq++)
@@ -6595,7 +6669,12 @@ rd_solver_specs(FILE *ifp,
 	  EH(-1, "Error reading variable type for Ignore Dependency");
 	}
       /* look for optional flag to apply this card in a symmetric manner */
-      fscanf(ifp, "%d",&symmetric_flag);
+      err = fscanf(ifp, "%d",&symmetric_flag);
+
+      errno = 0;
+      if ((err != 0 || err != 1) && (err == EOF && errno != 0)) {
+	EH(-1, "Error reading symmetric flag for Ignore Dependency");
+      }
       
       if ( !strcmp(input, "all") || !strcmp(input, "ALL") )
         {
@@ -8419,6 +8498,9 @@ rd_eq_specs(FILE *ifp,
     } else if (!strcasecmp(ts, "shell_curvature")) {
       ce = set_eqn(R_SHELL_CURVATURE, pd_ptr);
       pd_ptr->Do_Surf_Geometry = 1;
+    } else if (!strcasecmp(ts, "shell_curvature2")) {
+      ce = set_eqn(R_SHELL_CURVATURE2, pd_ptr);
+      pd_ptr->Do_Surf_Geometry = 1;
     } else if (!strcasecmp(ts, "shell_tension")) {
       ce = set_eqn(R_SHELL_TENSION, pd_ptr);
     } else if (!strcasecmp(ts, "shell_x")) {
@@ -8512,6 +8594,9 @@ rd_eq_specs(FILE *ifp,
     } else if (!strcasecmp(ts, "shell_normal2")) {
       ce = set_eqn(R_SHELL_NORMAL2, pd_ptr);
       pd_ptr->Do_Surf_Geometry = 1;
+    } else if (!strcasecmp(ts, "shell_normal3")) {
+      ce = set_eqn(R_SHELL_NORMAL3, pd_ptr);
+      pd_ptr->Do_Surf_Geometry = 1;
     } else if (!strcasecmp(ts, "ext_v")) {
       ce = set_eqn(R_EXT_VELOCITY, pd_ptr);
       ls->Extension_Velocity = TRUE;
@@ -8539,6 +8624,10 @@ rd_eq_specs(FILE *ifp,
       ce = set_eqn(R_PHASE5, pd_ptr);
    } else if (!strcasecmp(ts, "Enorm"))  {
       ce = set_eqn(R_ENORM, pd_ptr);
+   } else if (!strcasecmp(ts, "tfmp_mass"))  {
+      ce = set_eqn(R_TFMP_MASS, pd_ptr);
+   } else if (!strcasecmp(ts, "tfmp_bound"))  {
+      ce = set_eqn(R_TFMP_BOUND, pd_ptr);
 
     } else if (!strcasecmp(ts, "porous_sat"))  {
       ce = set_eqn(R_POR_LIQ_PRES, pd_ptr);
@@ -9020,6 +9109,8 @@ rd_eq_specs(FILE *ifp,
       cv = set_var(LAGR_MULT3, pd_ptr);
     } else if (!strcasecmp(ts, "K")) {
       cv = set_var(SHELL_CURVATURE, pd_ptr);
+    } else if (!strcasecmp(ts, "K2")) {
+      cv = set_var(SHELL_CURVATURE2, pd_ptr);
     } else if (!strcasecmp(ts, "TENS")) {
       cv = set_var(SHELL_TENSION, pd_ptr);
     } else if (!strcasecmp(ts, "SH_X")) {
@@ -9100,6 +9191,8 @@ rd_eq_specs(FILE *ifp,
       cv = set_var(SHELL_NORMAL1, pd_ptr);
     } else if (!strcasecmp(ts, "SH_N2")) {
       cv = set_var(SHELL_NORMAL2, pd_ptr);
+    } else if (!strcasecmp(ts, "SH_N3")) {
+      cv = set_var(SHELL_NORMAL3, pd_ptr);
     } else if (!strcasecmp(ts, "EXT_V")) {
       cv = set_var(EXT_VELOCITY, pd_ptr);
 
@@ -9128,6 +9221,11 @@ rd_eq_specs(FILE *ifp,
 
     } else if (!strcasecmp(ts, "ENORM")) {
       cv = set_var(ENORM, pd_ptr);
+
+    } else if (!strcasecmp(ts, "TFMP_PRES")) {
+      cv = set_var(TFMP_PRES, pd_ptr);
+    } else if (!strcasecmp(ts, "TFMP_SAT")) {
+      cv = set_var(TFMP_SAT, pd_ptr);
 
     } else if (!strncasecmp(ts, "Sp", 2)) {
       if (!strcasecmp(ts, "Sp")) {
@@ -9410,6 +9508,7 @@ rd_eq_specs(FILE *ifp,
        * One term ...
        */
     case R_SHELL_CURVATURE:
+    case R_SHELL_CURVATURE2:
     case R_SHELL_TENSION:
     case R_SHELL_X:
     case R_SHELL_Y:
@@ -9417,6 +9516,7 @@ rd_eq_specs(FILE *ifp,
     case R_SHELL_DIFF_CURVATURE:
     case R_SHELL_NORMAL1:
     case R_SHELL_NORMAL2:
+    case R_SHELL_NORMAL3:
 
       /* add a little consistency check for any 3D or cylindrical problems */
       if ((pd_ptr->CoordinateSystem != CARTESIAN &&
@@ -9447,6 +9547,24 @@ rd_eq_specs(FILE *ifp,
        * Two terms.... 
        */
     case R_PRESSURE:
+	if ( fscanf(ifp, "%lf %lf", 
+		    &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
+		    &(pd_ptr->etm[ce][(LOG2_SOURCE)]))
+	     != 2 )
+	{
+            pd_ptr->etm[ce][(LOG2_ADVECTION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_SOURCE)] = 0.0;
+	    sr = sprintf(err_msg, 
+		       "Using default equation term multipliers (adv,src) on %s in %s",
+		       EQ_Name[ce].name1, pd_ptr->MaterialName);
+	    WH(-1, err_msg);
+	  fprintf(stderr,"\t %s %.4g %.4g \n",EQ_Name[ce].name1, 
+                    pd_ptr->etm[ce][(LOG2_ADVECTION)], pd_ptr->etm[ce][(LOG2_SOURCE)]);
+	}
+
+	SPF( endofstring(echo_string),"\t %.4g %.4g", pd_ptr->etm[ce][(LOG2_ADVECTION)],
+	                                            pd_ptr->etm[ce][(LOG2_SOURCE)]);
+      break;
     case R_GRADIENT11:
     case R_GRADIENT12:
     case R_GRADIENT13:
@@ -9456,6 +9574,24 @@ rd_eq_specs(FILE *ifp,
     case R_GRADIENT31:
     case R_GRADIENT32:
     case R_GRADIENT33:
+	if ( fscanf(ifp, "%lf %lf", 
+		    &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
+		    &(pd_ptr->etm[ce][(LOG2_SOURCE)]))
+	     != 2 )
+	{
+            pd_ptr->etm[ce][(LOG2_ADVECTION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_SOURCE)] = 1.0;
+	    sr = sprintf(err_msg, 
+		       "Using default equation term multipliers (adv,src) on %s in %s",
+		       EQ_Name[ce].name1, pd_ptr->MaterialName);
+	    WH(-1, err_msg);
+	  fprintf(stderr,"\t %s %.4g %.4g \n",EQ_Name[ce].name1, 
+                    pd_ptr->etm[ce][(LOG2_ADVECTION)], pd_ptr->etm[ce][(LOG2_SOURCE)]);
+	}
+
+	SPF( endofstring(echo_string),"\t %.4g %.4g", pd_ptr->etm[ce][(LOG2_ADVECTION)],
+	                                            pd_ptr->etm[ce][(LOG2_SOURCE)]);
+      break;
     case R_EFIELD1:
     case R_EFIELD2:
     case R_EFIELD3:
@@ -9522,7 +9658,7 @@ rd_eq_specs(FILE *ifp,
       SPF( endofstring(echo_string),"\t %.4g %.4g", pd_ptr->etm[ce][(LOG2_MASS)],
 	   pd_ptr->etm[ce][(LOG2_SOURCE)]);    
       break;
-      
+
       /* 
        * Three terms.... 
        */
@@ -9534,7 +9670,7 @@ rd_eq_specs(FILE *ifp,
     case R_PHASE5:
     case R_ACOUS_REYN_STRESS:
     case R_SHELL_LUBP:
-	case R_POR_SINK_MASS:
+    case R_POR_SINK_MASS:
 
 	if ( fscanf(ifp, "%lf %lf %lf", 
 		    &(pd_ptr->etm[ce][(LOG2_MASS)]),
@@ -9623,11 +9759,44 @@ rd_eq_specs(FILE *ifp,
                                                          pd_ptr->etm[ce][(LOG2_DIFFUSION)],
 	                                                 pd_ptr->etm[ce][(LOG2_SOURCE)]);
         break;
-	  
+
+    case R_TFMP_MASS:
+    	if ( fscanf(ifp, "%lf %lf %lf",
+		  &(pd_ptr->etm[ce][(LOG2_MASS)]),
+		  &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
+		  &(pd_ptr->etm[ce][(LOG2_DIFFUSION)]))
+	      != 3 )
+    	{
+    	  sr = sprintf(err_msg,
+                       "Provide 3 equation term multipliers (mass,adv,dif) on %s in %s",
+					   EQ_Name[ce].name1, pd_ptr->MaterialName);
+    	  EH(-1, err_msg);
+    	}
+    	SPF( endofstring(echo_string),"\t %.4g %.4g %.4g", pd_ptr->etm[ce][(LOG2_MASS)],
+    		  	  	  	  	   	   	   	   	   	   	   	   pd_ptr->etm[ce][(LOG2_ADVECTION)],
+														   pd_ptr->etm[ce][(LOG2_DIFFUSION)]);
+      break;
+    case R_TFMP_BOUND:
+      if ( fscanf(ifp, "%lf %lf %lf",
+		  &(pd_ptr->etm[ce][(LOG2_MASS)]),
+		  &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
+		  &(pd_ptr->etm[ce][(LOG2_SOURCE)]))
+	   != 3 ) {
+	sr = sprintf(err_msg,
+		     "Provide 3 equation term multipliers (mass,adv,dif) on %s in %s",
+		     EQ_Name[ce].name1, pd_ptr->MaterialName);
+	EH(-1, err_msg);
+      }
+      SPF( endofstring(echo_string),"\t %.4g %.4g %.4g",
+	   pd_ptr->etm[ce][(LOG2_MASS)],
+	   pd_ptr->etm[ce][(LOG2_ADVECTION)],
+	   pd_ptr->etm[ce][(LOG2_SOURCE)]);
+      break;
       /* 
        * Four terms.... 
        */
     case R_BOND_EVOLUTION:
+
       if ( fscanf(ifp, "%lf %lf %lf  %lf", 
 		  &(pd_ptr->etm[ce][(LOG2_MASS)]),
 		  &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
@@ -9651,7 +9820,7 @@ rd_eq_specs(FILE *ifp,
 
 
 	/* 
-	 * Five terms.... 
+	 * Five terms....  mesh-like 
 	 */
     case R_MESH1:
     case R_MESH2:
@@ -9659,6 +9828,38 @@ rd_eq_specs(FILE *ifp,
     case R_SOLID1:
     case R_SOLID2:
     case R_SOLID3:
+
+	if ( fscanf(ifp, "%lf %lf %lf %lf %lf", 
+		    &(pd_ptr->etm[ce][(LOG2_MASS)]),
+		    &(pd_ptr->etm[ce][(LOG2_ADVECTION)]),
+		    &(pd_ptr->etm[ce][(LOG2_BOUNDARY)]),
+		    &(pd_ptr->etm[ce][(LOG2_DIFFUSION)]),
+		    &(pd_ptr->etm[ce][(LOG2_SOURCE)]))
+	     != 5 )
+	{
+            pd_ptr->etm[ce][(LOG2_MASS)] = 0.0; 
+            pd_ptr->etm[ce][(LOG2_ADVECTION)] = 0.0;
+	    pd_ptr->etm[ce][(LOG2_BOUNDARY)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_DIFFUSION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_SOURCE)] = 0.0;
+	    sr = sprintf(err_msg, 
+		       "Using default equation term multipliers (mas,adv,bnd,dif,src) on %s in %s",
+		       EQ_Name[ce].name1, pd_ptr->MaterialName);
+	    WH(-1, err_msg);
+	  fprintf(stderr,"\t %s %.4g %.4g %.4g %.4g %.4g \n", EQ_Name[ce].name1,
+               pd_ptr->etm[ce][(LOG2_MASS)],
+	       pd_ptr->etm[ce][(LOG2_ADVECTION)], pd_ptr->etm[ce][(LOG2_BOUNDARY)],
+               pd_ptr->etm[ce][(LOG2_DIFFUSION)], pd_ptr->etm[ce][(LOG2_SOURCE)]);
+	}
+	SPF( endofstring(echo_string),"\t %.4g %.4g %.4g %.4g %.4g", pd_ptr->etm[ce][(LOG2_MASS)],
+                                                                   pd_ptr->etm[ce][(LOG2_ADVECTION)],
+                                                                   pd_ptr->etm[ce][(LOG2_BOUNDARY)],
+                                                                   pd_ptr->etm[ce][(LOG2_DIFFUSION)],
+	                                                           pd_ptr->etm[ce][(LOG2_SOURCE)]);
+	break;
+	/* 
+	 * Five terms....  other
+	 */
     case R_ENERGY:
     case R_POTENTIAL:         /* KSC: 2/99 */ 
     case R_MASS:
@@ -9694,10 +9895,22 @@ rd_eq_specs(FILE *ifp,
 		    &(pd_ptr->etm[ce][(LOG2_SOURCE)]))
 	     != 5 )
 	{
-	  sr = sprintf(err_msg, 
-		       "Provide 5 equation term multipliers (mas,adv,bnd,dif,src) on %s in %s",
+            if(TimeIntegration == TRANSIENT)
+                { pd_ptr->etm[ce][(LOG2_MASS)] = 1.0; }
+            else
+                { pd_ptr->etm[ce][(LOG2_MASS)] = .0; }
+            pd_ptr->etm[ce][(LOG2_ADVECTION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_BOUNDARY)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_DIFFUSION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_SOURCE)] = 1.0;
+	    sr = sprintf(err_msg, 
+		       "Using default equation term multipliers (mas,adv,bnd,dif,src) on %s in %s",
 		       EQ_Name[ce].name1, pd_ptr->MaterialName);
-	  EH(-1, err_msg);
+	    WH(-1, err_msg);
+	  fprintf(stderr,"\t %s %.4g %.4g %.4g %.4g %.4g \n", EQ_Name[ce].name1,
+               pd_ptr->etm[ce][(LOG2_MASS)],
+	       pd_ptr->etm[ce][(LOG2_ADVECTION)], pd_ptr->etm[ce][(LOG2_BOUNDARY)],
+               pd_ptr->etm[ce][(LOG2_DIFFUSION)], pd_ptr->etm[ce][(LOG2_SOURCE)]);
 	}
 	SPF( endofstring(echo_string),"\t %.4g %.4g %.4g %.4g %.4g", pd_ptr->etm[ce][(LOG2_MASS)],
                                                                    pd_ptr->etm[ce][(LOG2_ADVECTION)],
@@ -9724,10 +9937,23 @@ rd_eq_specs(FILE *ifp,
 		    &(pd_ptr->etm[ce][(LOG2_POROUS_BRINK)]))
 	     != 6 )
 	{
-	  sr = sprintf(err_msg, 
-		       "Provide 6 equation term multipliers (mas,adv,bnd,dif,src,prs) on %s in %s",
+            if(TimeIntegration == TRANSIENT)
+                { pd_ptr->etm[ce][(LOG2_MASS)] = 1.0; }
+            else
+                { pd_ptr->etm[ce][(LOG2_MASS)] = .0; }
+            pd_ptr->etm[ce][(LOG2_ADVECTION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_BOUNDARY)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_DIFFUSION)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_SOURCE)] = 1.0;
+	    pd_ptr->etm[ce][(LOG2_POROUS_BRINK)] = 0.0;
+	    sr = sprintf(err_msg, 
+		       "Using default equation term multipliers (mas,adv,bnd,dif,src,prs) on %s in %s",
 		       EQ_Name[ce].name1, pd_ptr->MaterialName);
-	  EH(-1, err_msg);
+	    WH(-1, err_msg);
+	  fprintf(stderr,"\t %s %.4g %.4g %.4g %.4g %.4g %.4g \n", EQ_Name[ce].name1,
+               pd_ptr->etm[ce][(LOG2_MASS)], pd_ptr->etm[ce][(LOG2_ADVECTION)], 
+               pd_ptr->etm[ce][(LOG2_BOUNDARY)], pd_ptr->etm[ce][(LOG2_DIFFUSION)],
+               pd_ptr->etm[ce][(LOG2_SOURCE)], pd_ptr->etm[ce][(LOG2_POROUS_BRINK)]);
 	}
 	SPF( endofstring(echo_string),"\t %.4g %.4g %.4g %.4g %.4g %.4g", pd_ptr->etm[ce][(LOG2_MASS)],
 	                                                                pd_ptr->etm[ce][(LOG2_ADVECTION)],
@@ -10808,7 +11034,7 @@ read_constants(FILE *imp,	     /* pointer to file */
 	       const int species_no) /* species number (zero if no species) */
 
 {
-  static char yo[] = "read_species";
+  static char yo[] = "read_constants";
   char  line[255];
   char  *arguments[MAX_NUMBER_PARAMS];
   int num_const, i;
@@ -11149,6 +11375,7 @@ set_mp_to_unity(const int mn)
       m->len_u_species_source[i]	= 0;
       m->len_u_species_vol_expansion[i] = 0;
       m->len_u_vapor_pressure[i]	= 0;
+      m->len_u_reference_concn[i]	= 0;
     }
 
 
@@ -11244,6 +11471,10 @@ usage(const int exit_flag)
 	  "\t-c_mp INT                       Continuation: Method property ID\n");
   fprintf(stdout, 
 	  "\t-bc_list                        List BC tags for continuation\n");
+  fprintf(stdout, 
+	  "\t-wr_int                         Turn Write Intermediate Results On\n");
+  fprintf(stdout, 
+	  "\t-time_pl INT                    read_exoII_file time plane (default last)\n");
   fprintf(stdout, 
 	  "\t-v          --version           Print code version and exit\n");
 
@@ -11557,7 +11788,7 @@ translate_command_line( int argc,
 		    }
 		  strcat(command_line_ap," ");
 		}
-	      sprintf(aprepro_command, command_line_ap);
+	      sprintf(aprepro_command, "%s", command_line_ap);
 	      strcpy_rtn = strcpy(clc[*nclc]->string, command_line_ap);
 	    } /*end of else if list */
 
@@ -11724,6 +11955,26 @@ translate_command_line( int argc,
 	      (*nclc)++;
 	      istr++;
 	      clc[*nclc]->type = CONT_BC_LIST;
+	    }
+/* 
+ * OPTION -wr_int: TURN INTERMEDIATE RESULTS ON
+ */
+	  else if(strcmp(argv[istr], "-wr_int") == 0)
+	    {
+	      (*nclc)++;
+	      istr++;
+	      clc[*nclc]->type = WRITE_INTERMEDIATE;
+	    }
+/* 
+ * OPTION -time_pl: SPECIFY EXOII FILE STEP NUMBER TO READ
+ */
+	  else if(strcmp(argv[istr], "-time_pl") == 0)
+	    {
+	      (*nclc)++;
+	      istr++;
+	      clc[*nclc]->type = EXOII_TIME_PLANE;
+	      clc[*nclc]->i_val = atoi(argv[istr]);
+	      istr++;
 	    }
 /*
  * OPTION -ne:  Disable file echoing 
@@ -11984,6 +12235,14 @@ apply_command_line(struct Command_line_command **clc,
        else if (clc[i]->type == CONT_BC_LIST) {
 	 fprintf(stdout,"-bc_list request.\n\n\t goma done.\n\n"); 
 	 exit(0);
+       }
+       else if (clc[i]->type == WRITE_INTERMEDIATE) {
+	 fprintf(stdout,"Write Intermediate Solutions request.\n\n"); 
+         Write_Intermediate_Solutions = TRUE;
+       }
+       else if (clc[i]->type == EXOII_TIME_PLANE) {
+	 fprintf(stdout,"Exodus Time Plane = %d\n\n",clc[i]->i_val); 
+	 ExoTimePlane = clc[i]->i_val;
        }
      }
   return;
@@ -13380,6 +13639,30 @@ setup_table_MP (FILE *imp, struct Data_Table * table, char *search_string)
 	      EH(-1, err_msg);
 	    }
      	}
+      else if( (strcmp( line, "QUADRATIC") == 0) )
+	{
+	  if( (table->columns == 2) )
+	    {
+	      table->interp_method = QUADRATIC;
+	    }
+	  else 
+	    {
+	      sprintf( err_msg, " Incorrect number of columns for material property table lookup");
+	      EH(-1, err_msg);
+	    }
+     	}
+      else if( (strcmp( line, "QUAD_GP") == 0) )
+	{
+	  if( table->columns == 2)
+	    {
+	      table->interp_method = QUAD_GP;
+	    }
+	  else 
+	    {
+	      sprintf( err_msg, " Incorrect number of columns for material property table lookup");
+	      EH(-1, err_msg);
+	    }
+     	}
       else
 	{
 	  sprintf (err_msg,"%s:\tInvalid choice for material property table interpolation scheme",yo);
@@ -14207,13 +14490,13 @@ echo_compiler_settings()
        fprintf(echo_file, "%-30s= %s\n", "HAVE_SPARSE", "no");
 #endif
 
-#ifdef HAVE_BLAS
+#ifdef GOMA_HAVE_BLAS
        fprintf(echo_file, "%-30s= %s\n", "HAVE_BLAS", "yes");
 #else
        fprintf(echo_file, "%-30s= %s\n", "HAVE_BLAS", "no");
 #endif
 
-#ifdef HAVE_LAPACK
+#ifdef GOMA_HAVE_LAPACK
        fprintf(echo_file, "%-30s= %s\n", "HAVE_LAPACK", "yes");
 #else
        fprintf(echo_file, "%-30s= %s\n", "HAVE_LAPACK", "no");

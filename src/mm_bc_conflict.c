@@ -776,6 +776,8 @@ check_for_bc_conflicts2D(Exo_DB *exo, Dpi *dpi)
 		  ibc2 = BC_Unk_List[inode][offset_mom2][j];
  		  if (BC_Types[ibc2].BC_Name == VELO_TANGENT_BC ||
  		  	BC_Types[ibc2].BC_Name == VELO_TANGENT_USER_BC ||
+ 		  	BC_Types[ibc2].BC_Name == VELO_SLIP_FLUID_BC ||
+ 		  	BC_Types[ibc2].BC_Name == VELO_SLIP_ROT_FLUID_BC ||
  			BC_Types[ibc2].BC_Name == VELO_STREAMING_BC ) {
 		    /* Hmm, we got a hit.  Now make sure they are not coming from the same
 		       side set, which is something that is common */
@@ -788,7 +790,7 @@ check_for_bc_conflicts2D(Exo_DB *exo, Dpi *dpi)
 		       *  as they are not redundant.  The user signifies this case
 		       *  with a -1 in the Data_int[0] slot
 		       */
-		      if (BC_Types[ibc2].BC_Data_Int[0] != -1)  /*this is a last defense
+		      if (BC_Types[ibc2].BC_Data_Int[0] > -1)  /*this is a last defense
 								  to retain velo_tangent*/
 		      {
 			delete_bc_entry(BC_Unk_List[inode][offset_mom2], j);
@@ -1352,6 +1354,8 @@ check_for_bc_conflicts2D(Exo_DB *exo, Dpi *dpi)
 			 */
 			switch (bct2) {
 			case PLANE_BC:
+			case FILLET_BC:
+			case ROLL_FLUID_BC:
 			case GEOM_BC:	/* aka SPLINE note that the relation here may depend on 
 					 * the functional form of the geometry  */
 			case SLOPEX_BC:
@@ -1482,6 +1486,10 @@ check_for_bc_conflicts2D(Exo_DB *exo, Dpi *dpi)
 			    break;
 			case VELO_SLIP_BC:
 			case VELO_SLIP_ROT_BC:
+			case VELO_SLIP_FLUID_BC:
+			case VELO_SLIP_ROT_FLUID_BC:
+			case AIR_FILM_BC:
+			case AIR_FILM_ROT_BC:
 			    a1 = BC_Types[ibc1].BC_Data_Float[0] ;
 			    b1 = BC_Types[ibc2].BC_Data_Float[0] ;		
 			    a2 = BC_Types[ibc1].BC_Data_Float[1] ;

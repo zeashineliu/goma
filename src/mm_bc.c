@@ -1257,6 +1257,10 @@ set_up_Surf_BC(struct elem_side_bc_struct *First_Elem_Side_BC_Array[ ],
 	BC_Types[ibc].BC_Name == VELO_SLIP_ROT_BC ||
 	BC_Types[ibc].BC_Name == VELO_SLIP_FILL_BC ||
 	BC_Types[ibc].BC_Name == VELO_SLIP_ROT_FILL_BC ||
+	BC_Types[ibc].BC_Name == AIR_FILM_BC ||
+	BC_Types[ibc].BC_Name == AIR_FILM_ROT_BC ||
+	BC_Types[ibc].BC_Name == VELO_SLIP_FLUID_BC ||
+	BC_Types[ibc].BC_Name == VELO_SLIP_ROT_FLUID_BC ||
 	BC_Types[ibc].BC_Name == VELO_STREAMING_BC ) {
       poinbc = BC_Types[ibc].BC_Data_Int[0];
       if (poinbc != 0 && poinbc != -1) {    /*the -1 case is another new
@@ -1264,6 +1268,8 @@ set_up_Surf_BC(struct elem_side_bc_struct *First_Elem_Side_BC_Array[ ],
 					      prs 8/98 */
         /* Set to Flag for node not found */
         inode = -2;
+        /* Change -1 & DCL nset_id case to positive id  */
+        if(poinbc < 0) poinbc = -poinbc;
 
 	for (ins = 0; ins < exo->num_node_sets; ins++) {
 	  if (exo->ns_id[ins] == poinbc) {
@@ -1300,6 +1306,17 @@ set_up_Surf_BC(struct elem_side_bc_struct *First_Elem_Side_BC_Array[ ],
       }
     }
   }
+  for (ibc = 0; ibc < Num_BC; ibc++) {
+    if (BC_Types[ibc].BC_Name == ROLL_FLUID_BC)
+    {
+      for (ibc2 = 0; ibc2 < Num_BC; ibc2++) {
+         if (BC_Types[ibc2].BC_Name == VELO_SLIP_ROT_FLUID_BC)
+           {
+            BC_Types[ibc].BC_Data_Int[2] = ibc2;
+           }
+        }
+    }
+  }
 
   /*****************************************************************************/
   /*                              BLOCK 6                                      */
@@ -1330,7 +1347,11 @@ set_up_Surf_BC(struct elem_side_bc_struct *First_Elem_Side_BC_Array[ ],
 	    {
 	      if ( ( BC_Types[ibc2].BC_ID == ibc_id ) && 
 		   ( ( BC_Types[ibc2].BC_Name == VELO_SLIP_BC ) ||
-		     ( BC_Types[ibc2].BC_Name == VELO_SLIP_ROT_BC ) ) )
+		     ( BC_Types[ibc2].BC_Name == VELO_SLIP_ROT_BC ) ||
+		     ( BC_Types[ibc2].BC_Name == VELO_SLIP_FLUID_BC ) ||
+		     ( BC_Types[ibc2].BC_Name == VELO_SLIP_ROT_FLUID_BC ) ||
+		     ( BC_Types[ibc2].BC_Name == AIR_FILM_BC ) ||
+		     ( BC_Types[ibc2].BC_Name == AIR_FILM_ROT_BC ) ) ) 
 		{
 		  /*
 		   * Set integer to BC number of matching SLIP CONDITON
@@ -2348,6 +2369,7 @@ initialize_Boundary_Condition (struct Boundary_Condition *bc_ptr)
    * transporting this list across processors.
    */
   bc_ptr->len_u_BC = 0;
+  bc_ptr->max_DFlt = 0;
 
   /*
    * Also, the majority of boundary conditions may rely upon
@@ -2900,6 +2922,12 @@ int exchange_bc_info(void)
     /* check if BC needs special exchange information */
     switch (BC_Types[ibc].BC_Name) {
     case VELO_SLIP_BC:
+    case VELO_SLIP_ROT_BC:
+    case VELO_SLIP_FLUID_BC:
+    case VELO_SLIP_ROT_FLUID_BC:
+    case ROLL_FLUID_BC:
+    case AIR_FILM_BC:
+    case AIR_FILM_ROT_BC:
       exchange_fvelo_slip_bc_info(ibc);
       break;
     default:

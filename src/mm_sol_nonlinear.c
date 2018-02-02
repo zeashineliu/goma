@@ -51,6 +51,8 @@ static char rcsid[] =
 
 #include "sl_aztecoo_interface.h"
 
+#include "sl_stratimikos_interface.h"
+
 #define _MM_SOL_NONLINEAR_C
 #include "goma.h"
 
@@ -744,7 +746,7 @@ int solve_nonlinear_problem(struct Aztec_Linear_Solver_System *ams,
 		  }
 	  }
 
-	
+
       /* get global element size and velocity norm if needed for PSPG or Cont_GLS */
 	  if((PSPG && Num_Var_In_Type[PRESSURE]) || (Cont_GLS && Num_Var_In_Type[VELOCITY1]))
 	  {
@@ -941,7 +943,16 @@ EH(-1,"version not compiled with frontal solver");
 				     &time_value, exo, dpi,
 				     &num_total_nodes,
 				     &h_elem_avg, &U_norm, NULL);
-	      
+	     
+              if( vn->evssModel == LOG_CONF && pd->v[POLYMER_STRESS11] && af->Assemble_Jacobian == TRUE)
+                {
+                  numerical_jacobian_compute_stress(ams, x, resid_vector, delta_t, theta, 
+                                     x_old, x_older, xdot, xdot_old,x_update,
+                                     num_total_nodes, First_Elem_Side_BC_Array, 
+                                     Debug_Flag, time_value, exo, dpi, 
+                                     &h_elem_avg, &U_norm);
+                }
+ 
 	      a_end = ut();
 	      if (err == -1) {
                 return_value = -1;
@@ -1471,6 +1482,24 @@ EH(-1,"version not compiled with frontal solver");
         }
         break;
 
+      case STRATIMIKOS:
+        if ( strcmp( Matrix_Format,"epetra" ) == 0 ) {
+          int iterations;
+          int err = stratimikos_solve(ams, delta_x, resid_vector, &iterations, Stratimikos_File);
+          if (err) {
+	    EH(err, "Error in stratimikos solve");
+	    check_parallel_error("Error in solve - stratimikos");
+          }
+	  if (iterations == -1) {
+	    strcpy(stringer, "err");
+	  } else {
+	    aztec_stringer(AZ_normal, iterations, &stringer[0]);
+	  }
+        } else {
+          EH(-1, "Sorry, only Epetra matrix formats are currently supported with the Stratimikos interface\n");
+        }
+        break;
+
       case MA28:
 	  /*
 	   * sl_ma28 keeps internal static variables to determine whether
@@ -1652,6 +1681,20 @@ EH(-1,"version not compiled with frontal solver");
               matrix_solved = (ams->status[AZ_why] == AZ_normal);
             } else {
               EH(-1, "Sorry, only Epetra matrix formats are currently supported with the AztecOO solver suite\n");
+            }
+            break;
+          case STRATIMIKOS:
+            if ( strcmp( Matrix_Format,"epetra" ) == 0 ) {
+              int iterations;
+              int err = stratimikos_solve(ams, &wAC[iAC][0], &bAC[iAC][0], &iterations, Stratimikos_File);
+              EH(err, "Error in stratimikos solve");
+	      if (iterations == -1) {
+		strcpy(stringer, "err");
+	      } else {
+		aztec_stringer(AZ_normal, iterations, &stringer[0]);
+	      }
+            } else {
+              EH(-1, "Sorry, only Epetra matrix formats are currently supported with the Stratimikos interface\n");
             }
             break;
 
@@ -2066,34 +2109,6 @@ EH(-1,"version not compiled with frontal solver");
 	  xdot[i] -= damp_factor * var_damp[idv[i][0]] * delta_x[i] * (1.0 + 2 * theta) / delta_t;
 	}
 	exchange_dof(cx, dpi, xdot);	
-     /* Check and correct for negative values of thickness and concentration 
-        in shell film profile equation */
-
-
-
-      if (pd->v[SHELL_FILMP] || pd->v[SHELL_PARTC])
-        {
-	    for (i = 0; i < num_total_nodes; i++) 
-	      {
-                if (pd->v[SHELL_FILMH])
-                  {
-                   j = Index_Solution(i, R_SHELL_FILMH, 0, 0 , -1);
- 
-                   if (x[j] < 1.0e-6 ) 
-                     {
-                       x[j] = 1.0e-6;
-                     } 
-                  }
-                if (pd->v[SHELL_PARTC])
-                  {
-                   j = Index_Solution(i, R_SHELL_PARTC, 0, 0 , -1);
-                   if (x[j] < 1.0e-6 ) 
-                     {
-                       x[j] = 1.0e-6;
-                     } 
-                  }
-              }
-        }
 
 		
 	/* Now go back and correct all those dofs in solid regions undergoing newmark-beta
@@ -2493,7 +2508,6 @@ skip_solve:
 
       DPRINTF(stderr, "scaled solution norms  %13.6e %13.6e %13.6e \n", 
 	      Norm[4][0], Norm[4][1], Norm[4][2]);
-
 
   /*
     * COMPUTE SOLUTION SENSITIVITY TO PARAMETERS AS REQUESTED
@@ -3367,7 +3381,7 @@ soln_sens ( double lambda,  /*  parameter */
 {
   double dlambda, lambda_tmp, hunt_val;
 
-  int i,iHC;
+  int i,iHC,iAC;
   dbl          a_start;        /* mark start of assembly */
   dbl          a_end;          /* mark end of assembly */
   int       err;
@@ -3384,8 +3398,14 @@ soln_sens ( double lambda,  /*  parameter */
   double time_local =0.0;
   double time_global=0.0;
 
-  double fd_factor=1.0E-06;	/*  finite difference step */
+  double fd_factor=FD_FACTOR;	/*  finite difference step */
 
+#ifdef LOG_HUNTING_PLEASE
+  int		log_hunt = TRUE;
+#else
+  int		log_hunt = FALSE;
+#endif
+  int  log_capable[nHC];
   /*
   static int first_soln_sens_linear_solver_call = 1;
   */
@@ -3394,6 +3414,16 @@ soln_sens ( double lambda,  /*  parameter */
 				  * matrix_fill's. */
 
   exchange_dof(cx, dpi, x);
+
+  for(iHC=0 ; iHC < nHC ; iHC++)
+    {
+    if(log_hunt &&  
+       hunt[iHC].BegParameterValue > 0 && hunt[iHC].EndParameterValue > 0 
+       && hunt[iHC].BegParameterValue != hunt[iHC].EndParameterValue)
+         { log_capable[iHC] = TRUE;  }
+    else
+         {log_capable[iHC] = FALSE;  }
+    }
 
   /*
    *
@@ -3404,8 +3434,7 @@ soln_sens ( double lambda,  /*  parameter */
   a_start = ut();
 
   dlambda = fd_factor*lambda;
-  if (dlambda == 0.0) 
-    { dlambda = fd_factor; }
+  dlambda = (fabs(dlambda) < fd_factor ? fd_factor : dlambda);
 
   /*
    * GET RESIDUAL SENSITIVITY
@@ -3423,8 +3452,14 @@ soln_sens ( double lambda,  /*  parameter */
 		case HUN_FIRST:
 		for (iHC=0;iHC<nHC;iHC++)
 			{
+             if(log_capable[iHC])
+                    {
+                       hunt_val = hunt[iHC].BegParameterValue*
+   pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,lambda_tmp);
+                    }  else  {
 			hunt_val = hunt[iHC].BegParameterValue + lambda_tmp*
 				(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                    }
 			update_parameterHC(iHC, hunt_val, x, xdot, NULL, 1.0, cx, exo,dpi);
 			}
 		break;
@@ -3441,6 +3476,11 @@ soln_sens ( double lambda,  /*  parameter */
   af->Assemble_Jacobian = FALSE;
   af->Assemble_LSA_Jacobian_Matrix = FALSE;
   af->Assemble_LSA_Mass_Matrix = FALSE;
+  if(nAC > 0)
+    {
+     for(iAC=0 ; iAC<nAC ; iAC++)
+          {augc[iAC].evol =0.0;}
+    }
 
   err = matrix_fill_full(ams, x, res_p, 
 			 x_old, x_older, xdot, xdot_old, x_update, 
@@ -3463,8 +3503,14 @@ soln_sens ( double lambda,  /*  parameter */
 		case HUN_FIRST:
 		for (iHC=0;iHC<nHC;iHC++)
 			{
+             if(log_capable[iHC])
+                    {
+                       hunt_val = hunt[iHC].BegParameterValue*
+   pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,lambda_tmp);
+                    }  else  {
 			hunt_val = hunt[iHC].BegParameterValue + lambda_tmp*
 				(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                    }
 			update_parameterHC(iHC, hunt_val, x, xdot, NULL, 1.0, cx, exo,dpi);
 			}
 		break;
@@ -3481,6 +3527,11 @@ soln_sens ( double lambda,  /*  parameter */
   af->Assemble_Jacobian = FALSE;
   af->Assemble_LSA_Jacobian_Matrix = FALSE;
   af->Assemble_LSA_Mass_Matrix = FALSE;
+  if(nAC > 0)
+    {
+     for(iAC=0 ; iAC<nAC ; iAC++)
+          {augc[iAC].evol =0.0;}
+    }
 
   err = matrix_fill_full(ams, x, res_m, 
 			 x_old, x_older, xdot, xdot_old, x_update,
@@ -3506,8 +3557,14 @@ soln_sens ( double lambda,  /*  parameter */
 		case HUN_FIRST:
 		for (iHC=0;iHC<nHC;iHC++)
 			{
+             if(log_capable[iHC])
+                    {
+                       hunt_val = hunt[iHC].BegParameterValue*
+   pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,lambda);
+                    }  else  {
 			hunt_val = hunt[iHC].BegParameterValue + lambda*
-				(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+		(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                    }
 			update_parameterHC(iHC, hunt_val, x, xdot, NULL, 1.0, cx, exo,dpi);
 			}
 		break;
@@ -3685,6 +3742,21 @@ soln_sens ( double lambda,  /*  parameter */
         matrix_solved = (ams->status[AZ_why] == AZ_normal);
       } else {
         EH(-1, "Sorry, only Epetra matrix formats are currently supported with the AztecOO solver suite\n");
+      }
+      break;
+
+    case STRATIMIKOS:
+      if ( strcmp( Matrix_Format,"epetra" ) == 0 ) {
+        int iterations;
+        int err = stratimikos_solve(ams,  x_sens, resid_vector_sens, &iterations, Stratimikos_File);
+        EH(err, "Error in stratimikos solve");
+	if (iterations == -1) {
+	  strcpy(stringer, "err");
+	} else {
+	  aztec_stringer(AZ_normal, iterations, &stringer[0]);
+	}
+      } else {
+        EH(-1, "Sorry, only Epetra matrix formats are currently supported with the Stratimikos interface\n");
       }
       break;
     case MA28:

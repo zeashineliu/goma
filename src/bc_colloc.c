@@ -102,6 +102,7 @@ apply_point_colloc_bc (
   int doFullJac = 0;
   double nwall[3];
   int contact_flag = FALSE;
+  double xsurf[MAX_PDIM];
 
 
   /***************************************************************************/
@@ -304,7 +305,20 @@ apply_point_colloc_bc (
  		fspline_rs(ielem_dim, &func, d_func, BC_Types[bc_input_id].u_BC,
  			time_intermediate);
  		break;
- 
+
+            case UUSER_COLLOC_BC:
+                uuser_colloc_surf(&func, d_func, BC_Types[bc_input_id].u_BC,
+                                  id, time_intermediate);
+                break;
+            case VUSER_COLLOC_BC:
+               	vuser_colloc_surf(&func, d_func, BC_Types[bc_input_id].u_BC,
+                                  id, time_intermediate);
+                break;
+            case WUSER_COLLOC_BC:
+               	wuser_colloc_surf(&func, d_func, BC_Types[bc_input_id].u_BC,
+                                  id, time_intermediate);
+                break;
+
 	    case T_USER_BC:
 		tuser(&func, d_func, BC_Types[bc_input_id].u_BC,
 		       time_intermediate);
@@ -350,6 +364,20 @@ apply_point_colloc_bc (
 		fplane(ielem_dim, &func, d_func, 
 		       BC_Types[bc_input_id].BC_Data_Float);
 		break;
+
+
+	    case FILLET_BC:
+		f_fillet(ielem_dim, &func, d_func, 
+		       BC_Types[bc_input_id].u_BC,BC_Types[bc_input_id].len_u_BC);
+		break;
+	    case ROLL_FLUID_BC:
+                icount = BC_Types[bc_input_id].BC_Data_Int[2];
+xsurf[0] = BC_Types[icount].BC_Data_Float[BC_Types[icount].max_DFlt+1];
+xsurf[1] = BC_Types[icount].BC_Data_Float[BC_Types[icount].max_DFlt+2];
+xsurf[2] = BC_Types[icount].BC_Data_Float[BC_Types[icount].max_DFlt+3];
+		f_roll_fluid(ielem_dim, &func, d_func, 
+		       BC_Types[bc_input_id].u_BC,BC_Types[bc_input_id].len_u_BC, xsurf);
+		break;
 #ifdef USE_CGM
 	    case SM_PLANE_BC:       /* Solid Model PLANE BC */
 	      /* I took out the plane generation at the BC level.  It
@@ -381,13 +409,23 @@ apply_point_colloc_bc (
 	      fmesh_constraint(&func, d_func, bc_input_id);
 	      break;
 
-	    case VVARY_BC:
 	    case UVARY_BC:
+	    case VVARY_BC:
 	    case WVARY_BC:
 		var_flag = BC_Types[bc_input_id].desc->equation;
 		fvelocity_profile(var_flag, ielem_dim, BC_Types[bc_input_id].BC_Name,
 				  &func, d_func, BC_Types[bc_input_id].u_BC,
 				  time_intermediate);
+		break;
+		    
+	    case U_PARABOLA_BC:
+	    case V_PARABOLA_BC:
+	    case W_PARABOLA_BC:
+		var_flag = BC_Types[bc_input_id].desc->equation;
+		fvelocity_parabola(var_flag, ielem_dim, 
+			BC_Types[bc_input_id].BC_Name,
+			&func, d_func, BC_Types[bc_input_id].u_BC,
+			time_intermediate,BC_Types[bc_input_id].len_u_BC);
 		break;
 		    
 	    case GD_CONST_BC:
@@ -722,6 +760,294 @@ fplane (int ielem_dim,
 } /* END of routine fplane                                                   */
 /*****************************************************************************/
 
+void 
+f_fillet (int ielem_dim,
+        double *func,
+        double d_func[],	/* dimensioned [MAX_VARIABLE_TYPES+MAX_CONC] */
+        const double *p,		/*  function parameters from data card  */
+        const int num_const)           /* number of passed parameters   */
+{    
+/**************************** EXECUTION BEGINS *******************************/
+  double xpt, ypt, theta1, theta2, rad, xcen , ycen, alpha;
+  double theta;
+
+  if(af->Assemble_LSA_Mass_Matrix)
+    return;
+
+  if(num_const != 5)
+       EH(-1,"Need 5 parameters for 2D fillet geometry bc!\n");
+
+  xpt=p[0];
+  ypt=p[1];
+  theta1=p[2];
+  theta2=p[3];
+  rad=p[4];
+
+  alpha = 0.5*(theta2-theta1);
+  xcen = xpt + (rad/sin(alpha))*cos(theta1+alpha);
+  ycen = ypt + (rad/sin(alpha))*sin(theta1+alpha);
+
+  /**   compute angle of point on curve from arc center **/
+
+  theta = atan2(fv->x[1]-ycen,fv->x[0]-xcen);
+  theta = theta > theta2-1.5*M_PIE ? theta : theta + 2*M_PIE;
+
+  /**  use different f depending on theta  **/
+
+  if( (theta1-0.5*M_PIE) <= theta && theta <= (theta1+alpha))
+     {
+      *func = (fv->x[1]-ypt)*cos(theta1) - (fv->x[0]-xpt)*sin(theta1);
+      d_func[MESH_DISPLACEMENT1] =  -sin(theta1);
+      d_func[MESH_DISPLACEMENT2] =  cos(theta1);
+
+     }
+  else if ( (theta1+alpha) <= theta && (theta - 0.5*M_PIE) <= theta2)
+     {
+      *func = (fv->x[1]-ypt)*cos(theta2) - (fv->x[0]-xpt)*sin(theta2);
+      d_func[MESH_DISPLACEMENT1] = -sin(theta2);
+      d_func[MESH_DISPLACEMENT2] = cos(theta2);
+
+     }
+  else
+     {
+      *func = SQUARE(fv->x[0]-xcen)+SQUARE(fv->x[1]-ycen)-SQUARE(rad);
+      d_func[MESH_DISPLACEMENT1] = 2.*(fv->x[0]-xcen);
+      d_func[MESH_DISPLACEMENT2] = 2.*(fv->x[1]-ycen);
+
+     }
+
+  if(ielem_dim == 3)
+      d_func[MESH_DISPLACEMENT3] = 0.0;
+
+} /* END of routine f_fillet                                                   */
+/*****************************************************************************/
+
+void 
+f_roll_fluid (int ielem_dim,
+        double *func,
+        double d_func[],	/* dimensioned [MAX_VARIABLE_TYPES+MAX_CONC] */
+        const double *p,		/*  function parameters from data card  */
+        const int num_const,           /* number of passed parameters   */
+        double *xsurf)           /* number of passed parameters   */
+{    
+/**************************** EXECUTION BEGINS *******************************/
+  double roll_rad; /* roll radius */
+  double origin[3];        /* roll axis origin (x,y,z) */
+  double dir_angle[3];     /* axis direction angles */
+  double coord[3];     /* current coordinates */
+  double axis_pt[3], rad_dir[3], d_dist[3], dist, R, factor, t;
+  double omega,v_dir[3], v_roll[3];
+  double velo_avg = 0.0,  pgrad=0.;
+  double v_solid=0., res, jac, delta, flow, eps=1.0e-8, viscinv;
+  double jacinv, thick;
+#if 0
+  double dthick_dV, dthick_dP;
+#endif
+  int Pflag = TRUE;
+  double pg_factor=1.0, tang_sgn=1.0, v_mag=0.;;
+
+  int j,var;
+
+#if 0
+  int jvar, k;
+#endif
+
+  if(af->Assemble_LSA_Mass_Matrix)
+    return;
+
+  if(num_const < 7)
+       EH(-1,"Need at least 7 parameters for Roll geometry bc!\n");
+
+
+  roll_rad=p[0];
+  origin[0] = p[1];    origin[1] = p[2];  origin[2] = p[3];
+  dir_angle[0] = p[4];   dir_angle[1] = p[5];   dir_angle[2] = p[6];
+
+/* calculate distance from interface surface to solid surface for repulsion calculations */
+
+      coord[0] = fv->x[0];
+      coord[1] = fv->x[1];
+      if( ielem_dim == 3)
+        { coord[2] = fv->x[2];}
+      else
+        { coord[2] = 0.0;}
+
+/*  find intersection of axis with normal plane - i.e., locate point on
+ *          axis that intersects plane normal to axis that contains local point. */
+
+    factor = SQUARE(dir_angle[0]) + SQUARE(dir_angle[1]) + SQUARE(dir_angle[2]);
+    t = (dir_angle[0]*(coord[0]-origin[0]) + dir_angle[1]*(coord[1]-origin[1])
+        + dir_angle[2]*(coord[2]-origin[2]))/factor;
+    axis_pt[0] = origin[0]+dir_angle[0]*t;
+    axis_pt[1] = origin[1]+dir_angle[1]*t;
+    axis_pt[2] = origin[2]+dir_angle[2]*t;
+
+/*  compute radius and radial direction */
+
+    R = sqrt( SQUARE(coord[0]-axis_pt[0]) + SQUARE(coord[1]-axis_pt[1]) +
+                SQUARE(coord[2]-axis_pt[2]) );
+    rad_dir[0] = (coord[0]-axis_pt[0])/R;
+    rad_dir[1] = (coord[1]-axis_pt[1])/R;
+    rad_dir[2] = (coord[2]-axis_pt[2])/R;
+    dist = R - roll_rad;
+    d_dist[0] = rad_dir[0]*(1.-SQUARE(dir_angle[0])/factor)
+          +rad_dir[1]*(-dir_angle[1]*dir_angle[0]/factor)
+          +rad_dir[2]*(-dir_angle[2]*dir_angle[0]/factor);
+    d_dist[1] = rad_dir[1]*(1.-SQUARE(dir_angle[1])/factor)
+          +rad_dir[0]*(-dir_angle[0]*dir_angle[1]/factor)
+          +rad_dir[2]*(-dir_angle[2]*dir_angle[1]/factor);
+    d_dist[2] = rad_dir[2]*(1.-SQUARE(dir_angle[2])/factor)
+          +rad_dir[0]*(-dir_angle[0]*dir_angle[2]/factor)
+          +rad_dir[1]*(-dir_angle[1]*dir_angle[2]/factor);
+
+
+    if(num_const < 10)
+       WH(-1,"ROLL_FLUID: Less than 10 parameters - reverting to roll surface!\n");
+  
+    omega=p[7];
+/* compute velocity direction as perpendicular to both axis and radial
+ *         direction.  Positive direction is determined by right hand rule */
+
+     v_dir[0] = dir_angle[1]*rad_dir[2]-dir_angle[2]*rad_dir[1];
+     v_dir[1] = dir_angle[2]*rad_dir[0]-dir_angle[0]*rad_dir[2];
+     v_dir[2] = dir_angle[0]*rad_dir[1]-dir_angle[1]*rad_dir[0];
+
+     v_roll[0] =  omega*roll_rad*v_dir[0];
+     v_roll[1] =  omega*roll_rad*v_dir[1];
+     v_roll[2] =  omega*roll_rad*v_dir[2];
+
+     if( TimeIntegration == TRANSIENT && pd->e[R_MESH1] )
+          {
+            /* Add the mesh motion to the substrate velocity */
+            v_roll[0] += fv_dot->x[0];
+            v_roll[1] += fv_dot->x[1];
+            v_roll[2] += fv_dot->x[2];
+          }
+
+  /* quantities specific to FLUID bcs   */
+
+  if(num_const > 8 && p[9] >= 0.0)
+     {
+      dist = 0.;
+      for(var=0; var < pd->Num_Dim; var ++)
+       {
+        /* Uses undeformed node position */
+         dist += SQUARE(fv->x0[var]-xsurf[var]);
+       }
+         dist /= SQUARE(p[10]);
+/*if(dist < 10)fprintf(stderr,"roll_fl %g %g %g\n",fv->x0[0],xsurf[0],dist);
+*/
+
+     Pflag = (int)p[11];
+     velo_avg = 0.0;  pgrad=0.;  v_mag = 0.;
+     for (j = 0; j < pd->Num_Dim; j++)
+        {
+          velo_avg += fv->stangent[0][j]*(v_roll[j] + fv->v[j]);
+          v_solid += fv->stangent[0][j]*v_roll[j];
+          v_mag += SQUARE(v_roll[j]);
+          if(Pflag)
+              {
+                pgrad += fv->stangent[0][j]*fv->grad_P[j];
+              }
+        }
+     v_mag = sqrt(v_mag);
+     tang_sgn = v_solid/v_mag;
+     tang_sgn = (double)SGN(v_solid/v_mag);
+     velo_avg *= 0.5;
+   /* sometimes the tangent/normals flip causing havoc....*/
+     if(v_solid < 0)
+        {
+         WH(-1,"fvelo_slip: normals and tangents have flipped! - try CONTACT_LINE model\n");
+         velo_avg *= tang_sgn;
+         v_solid *= tang_sgn;
+         pgrad *= tang_sgn;
+        }
+
+     pg_factor = 1.0;
+     if(dist < 10.0)
+         {pg_factor = 1.0-exp(-dist);  }
+     pgrad *= pg_factor;
+
+     flow = MAX(0.,p[9]*v_solid);
+     viscinv = 1./p[8];
+     thick = flow/velo_avg;
+     j=0;
+     do {
+         res = -CUBE(thick)*viscinv*pgrad/12. + thick*velo_avg - flow;
+         jac = -0.25*SQUARE(thick)*viscinv*pgrad + velo_avg;
+         jacinv = 1.0/jac;
+         delta = -res*jacinv;
+         thick += delta;
+         j++;
+        } while(fabs(delta) > eps && j<20);
+#if 0
+     dthick_dV = -0.5*jacinv;     /*  1/h*derivative  */
+     dthick_dP = CUBE(thick)*viscinv/12.*jacinv;
+#endif
+#if 0
+fprintf(stderr,"slip %d %g %g %g %g\n",Pflag,fv->x[0],thick,flow/v_solid,velo_avg);
+fprintf(stderr,"more %g %g %g %g\n",res,jac, dthick_dV,dthick_dP);
+#endif
+	thick = 0.;
+    *func = dist - thick;
+    d_func[MESH_DISPLACEMENT1] =  d_dist[0];
+    d_func[MESH_DISPLACEMENT2] =  d_dist[1];
+    d_func[MESH_DISPLACEMENT3] =  d_dist[2];
+#if 0
+    for (jvar=0; jvar<pd->Num_Dim; jvar++)
+      {
+        var = VELOCITY1 + jvar;
+        for (k=0; k<pd->Num_Dim; k++)
+          {
+           d_func[var] += -thick*dthick_dV*fv->stangent[0][k];
+          }
+       }
+#endif
+#if 0
+/* Mesh motion Jacobian entries   */
+        for (jvar=0; jvar<ei->ielem_dim; jvar++)
+          {
+            var = MESH_DISPLACEMENT1 + jvar;
+            if (pd->v[var])
+              {
+                    for (k = 0; k < pd->Num_Dim; k++)
+                      {
+                        d_func[var] += -thick*dthick_dV*fv->v[k]
+                                *fv->stangent[0][k];
+                        if(Pflag)
+                          {
+                          d_func[var] += -dthick_dP*pg_factor*fv->grad_P[k]*fv->stangent[0][k];
+                          }
+                      }
+              }
+          }
+
+#endif
+#if 0
+   var = PRESSURE;
+    if (pd->v[var])
+      {
+        if(Pflag )
+          {
+               for (k = 0; k < pd->Num_Dim; k++)
+                  {
+                    d_func[var] += -dthick_dP*pg_factor*fv->stangent[0][k];
+                  }
+          }
+      }
+#endif
+    }	else	{
+    *func = dist;
+    d_func[MESH_DISPLACEMENT1] =  d_dist[0];
+    d_func[MESH_DISPLACEMENT2] =  d_dist[1];
+    d_func[MESH_DISPLACEMENT3] =  d_dist[2];
+    }
+
+
+
+} /* END of routine f_roll_fluid                                                   */
+/*****************************************************************************/
+
 #ifdef USE_CGM
 void 
 sm_fplane (int ielem_dim,
@@ -763,6 +1089,121 @@ fvelocity_profile (int var_flag,
   *func -= fv->v[var_flag-VELOCITY1];
   
 } /* END of routine fvelocity_profile                                        */
+/*****************************************************************************/
+
+void 
+fvelocity_parabola (const int var_flag,
+        const int ielem_dim,
+        const int velo_condition,
+        double *func,
+        double d_func[],       /* defined [MAX_VARIABLE_TYPES + MAX_CONC] */
+        const double p[],      /* parameters passed in from the input deck*/
+        const double time,           /* time at which bc's are evaluated   */
+        const int num_const)           /* number of passed parameters   */
+{
+/*    parabolic velocity profile
+ *      p[0] = coordinate1
+ *      p[1] = coordinate2
+ *      p[2] = flow in positive coordinate direction
+ */
+double coord1, coord2, qflow, gap, pre_factor, temp, expon, time_factor;
+double pl_index=1.0;
+int i;
+	coord1 = p[0];
+	coord2 = p[1];
+	qflow = p[2];
+	gap = fabs(coord2-coord1);
+	pre_factor = 6.*qflow/(gap*gap*gap);
+
+  if(ielem_dim > 2)
+     {
+      EH(-1,"Velo parabola not ready for 3D yet!\n");
+      return;
+     }
+  for(i=0;i<ielem_dim;i++)
+     {
+      d_func[MESH_DISPLACEMENT1+i] = 0.0;
+     }
+
+  if(af->Assemble_LSA_Mass_Matrix)
+    d_func[var_flag] = 0.0;
+  else
+    d_func[var_flag] = -1.0;
+
+
+  if( gap > DBL_SMALL)
+  {
+    if(num_const == 3 || p[3] == 1.0)   /*  Newtonian solution   */
+      {
+       if( velo_condition == U_PARABOLA_BC)
+         {
+          *func = pre_factor*(fv->x[1]-coord1)*(coord2-fv->x[1]);
+          if( pd->e[R_MESH1] )
+             {
+              d_func[MESH_DISPLACEMENT2] = pre_factor*(coord1+coord2-2.*fv->x[1]);
+             }
+         }
+       else if ( velo_condition == V_PARABOLA_BC )
+        {
+	 *func = pre_factor*(fv->x[0]-coord1)*(coord2-fv->x[0]);
+          if( pd->e[R_MESH1] )
+            {
+             d_func[MESH_DISPLACEMENT1] = pre_factor*(coord1+coord2-2.*fv->x[0]);
+            }
+        }
+       else {   *func =0.; }
+     }
+    else if(num_const > 3 )   /*  Power-law  solution   */
+      {
+        if(p[3] < 0.0)
+            {pl_index = gn->nexp;}
+        else
+            {pl_index = p[3];}
+        expon = 2.+1./pl_index;
+	pre_factor = (2.*pl_index+1.)/(pl_index +1.)*qflow/pow(gap,expon);
+        expon = 1.+1./pl_index;
+        temp = 2*fv->x[1]-coord1-coord2;
+       if( velo_condition == U_PARABOLA_BC)
+         {
+          temp = 2*fv->x[1]-coord1-coord2;
+          *func = pre_factor*(pow(gap,expon) - pow(fabs(temp),expon));
+          if( pd->e[R_MESH1] )
+             {
+              d_func[MESH_DISPLACEMENT2] = pre_factor*(-2.*SGN(temp)*expon*pow(fabs(temp),1./pl_index));
+             }
+         }
+       else if ( velo_condition == V_PARABOLA_BC )
+        {
+          temp = 2*fv->x[0]-coord1-coord2;
+          *func = pre_factor*(pow(gap,expon) - pow(fabs(temp),expon));
+          if( pd->e[R_MESH1] )
+            {
+              d_func[MESH_DISPLACEMENT1] = pre_factor*(-2.*SGN(temp)*expon*pow(fabs(temp),1./pl_index));
+            }
+        }
+       else {   *func =0.; }
+     }
+  }  else   {
+       *func = 0.0;
+  }
+/*  Add sinusoidal time-varying pieces   */
+  if(num_const > 3 && num_const % 3 == 1)
+     {
+      time_factor = 0.;
+      for(i=4 ; i<num_const ; i=i+3)
+         {
+          time_factor += p[i]*sin(p[i+1]*time + p[i+2]);
+         }
+      *func *= (1.0 + time_factor);
+      for(i=0;i<ielem_dim;i++)
+         {
+          d_func[MESH_DISPLACEMENT1+i] *= (1.0 + time_factor);
+         }
+     }
+
+  *func -= fv->v[var_flag-VELOCITY1];
+  
+} /* END of routine fvelocity_parabola                                        */
 /*****************************************************************************/
 
 void
@@ -864,10 +1305,11 @@ fgeneralized_dirichlet(double *func,
 					 * implicit (tt = 0) */
 		       const double dt) /* current time step size          */
 {
-  int jvar, wspec;
+  int jvar, wspec, vector_sens, b;
   int index_var;                  /* Column index into the global stiffness matrix*/
   dbl x_var;                      /* value of variable at this node */
   dbl d_x_var;                    /* sensitivity of variable to nodal unknown */
+  dbl d_vect_var[DIM];            /* sensitivity of vector variable to nodal unknown */
   dbl slope;                      /* slope of interpolated function in table */
   dbl x_var_mp[1];                /* dummy variable for table lookup subroutines */
   
@@ -881,8 +1323,12 @@ fgeneralized_dirichlet(double *func,
   wspec = BC_Types[bc_input_id].BC_Data_Int[3];
   
   /* put value of variable in GD Condition into x_var and put it's sensitivity in d_x_var */
-  index_var = load_variable( &x_var, &d_x_var, jvar, wspec, tt, dt);
+  index_var = load_variable( &x_var, &d_x_var, jvar, wspec, tt, dt, d_vect_var);
   
+  if(jvar == SPEED)
+      { vector_sens = 1;}
+  else
+      { vector_sens = 0;}
   /* Now add in contributions to residual vector and jacobian matrix */
   
   switch(gd_condition)
@@ -892,7 +1338,14 @@ fgeneralized_dirichlet(double *func,
       *func = (x_var - BC_Types[bc_input_id].BC_Data_Float[0] );
       
       if (af->Assemble_Jacobian) {
-	d_func[index_var] = d_x_var;
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	            d_func[index_var+b] = d_vect_var[b];
+                    }
+              }  else   {
+	         d_func[index_var] = d_x_var;
+              }
       }
       break;
       
@@ -902,7 +1355,14 @@ fgeneralized_dirichlet(double *func,
 	       + BC_Types[bc_input_id].BC_Data_Float[0] );
       
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = d_vect_var[b] * BC_Types[bc_input_id].BC_Data_Float[1] ;
+                    }
+              }  else   {
 	d_func[index_var] = d_x_var * BC_Types[bc_input_id].BC_Data_Float[1] ;
+              }
       }
       break;
 
@@ -912,7 +1372,14 @@ fgeneralized_dirichlet(double *func,
 	       + BC_Types[bc_input_id].BC_Data_Float[0] );
       
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = -d_vect_var[b] * BC_Types[bc_input_id].BC_Data_Float[1]/(x_var*x_var) ;
+                    }
+              }  else   {
 	d_func[index_var] = -d_x_var * BC_Types[bc_input_id].BC_Data_Float[1]/(x_var*x_var) ;
+              }
       }
       break;
       
@@ -923,8 +1390,16 @@ fgeneralized_dirichlet(double *func,
 	       + BC_Types[bc_input_id].BC_Data_Float[0] );
       
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = d_vect_var[b] * ( BC_Types[bc_input_id].BC_Data_Float[1] 
+					+ 2. * x_var * BC_Types[bc_input_id].BC_Data_Float[2] );
+                    }
+              }  else   {
 	d_func[index_var] = d_x_var * ( BC_Types[bc_input_id].BC_Data_Float[1] 
 					+ 2. * x_var * BC_Types[bc_input_id].BC_Data_Float[2] );
+              }
       }
       break;
     case(GD_PARAB_OFFSET_BC):  /* C2 (x - C3)^2 + C1 (x - C3) + c0 */
@@ -936,9 +1411,18 @@ fgeneralized_dirichlet(double *func,
 	       * BC_Types[bc_input_id].BC_Data_Float[1]
 	       + BC_Types[bc_input_id].BC_Data_Float[0] );
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = d_vect_var[b] * ( BC_Types[bc_input_id].BC_Data_Float[1]
+			                + 2. * (x_var - BC_Types[bc_input_id].BC_Data_Float[3]) 
+					* BC_Types[bc_input_id].BC_Data_Float[2] );
+                    }
+              }  else   {
 	d_func[index_var] = d_x_var * ( BC_Types[bc_input_id].BC_Data_Float[1]
 			                + 2. * (x_var - BC_Types[bc_input_id].BC_Data_Float[3]) 
 					* BC_Types[bc_input_id].BC_Data_Float[2] );
+              }
       }
       break;
     case(GD_CIRC_BC):  /* C2 ( x - C1 )^2  - c0^2 */
@@ -951,8 +1435,16 @@ fgeneralized_dirichlet(double *func,
 	       - BC_Types[bc_input_id].BC_Data_Float[0] * BC_Types[bc_input_id].BC_Data_Float[0]);
       
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = d_vect_var[b] * ( 2. * BC_Types[bc_input_id].BC_Data_Float[2] * (
+			x_var - BC_Types[bc_input_id].BC_Data_Float[1] ) );
+                    }
+              }  else   {
 	d_func[index_var] = d_x_var * ( 2. * BC_Types[bc_input_id].BC_Data_Float[2] * (
 			x_var - BC_Types[bc_input_id].BC_Data_Float[1] ) );
+              }
       }
       break;
 
@@ -970,12 +1462,24 @@ fgeneralized_dirichlet(double *func,
       /* printf("POLYN fit X,F = %f %f\n", x_var, *func); */
 
       if (af->Assemble_Jacobian) {
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	d_func[index_var+b] = d_vect_var[b] * ( BC_Types[bc_input_id].BC_Data_Float[1] 
+				       + 2. * x_var * BC_Types[bc_input_id].BC_Data_Float[2]
+			       + 3. * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[3]
+		       + 4. * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[4]
+	       + 5. * x_var * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[5]
+       + 6. * x_var * x_var * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[6] );
+                    }
+              }  else   {
 	d_func[index_var] = d_x_var * ( BC_Types[bc_input_id].BC_Data_Float[1] 
 				       + 2. * x_var * BC_Types[bc_input_id].BC_Data_Float[2]
 			       + 3. * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[3]
 		       + 4. * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[4]
 	       + 5. * x_var * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[5]
        + 6. * x_var * x_var * x_var * x_var * x_var * BC_Types[bc_input_id].BC_Data_Float[6] );
+              }
       }
       break;
 
@@ -988,7 +1492,14 @@ fgeneralized_dirichlet(double *func,
 
       if (af->Assemble_Jacobian) 
 	{
+          if (vector_sens)
+              {
+                for(b=0 ; b<DIM  ; b++)	{
+	  d_func[index_var+b] = BC_Types[bc_input_id].BC_Data_Float[0]*slope*d_vect_var[b];
+                    }
+              }  else   {
 	  d_func[index_var] = BC_Types[bc_input_id].BC_Data_Float[0]*slope*d_x_var;
+              }
 	}
 
       break;
@@ -996,7 +1507,7 @@ fgeneralized_dirichlet(double *func,
     default:
       return(-1);
     }
-  
+
   return(0);
 } /* END of routine fgeneralized_dirichlet                                   */
 /*****************************************************************************/
@@ -1331,7 +1842,8 @@ load_variable (double *x_var,        /* variable value */
                int wspec,            /* species number */
                double tt,            /* parameter to vary time integration from 
                                         explicit (tt = 1) to implicit (tt = 0) */
-               double dt)            /* current time step size */
+               double dt,            /* current time step size */
+               double d_vect_var[])	/* vector sensitivities  */
 
 /******************************************************************************
 
@@ -1344,9 +1856,11 @@ load_variable (double *x_var,        /* variable value */
 ******************************************************************************/
 
 {
-  int var=-1,b;
+  int var=-1, b;
   *x_var = 0.;
   *d_x_var = 0.;
+
+  memset(d_vect_var, 0, DIM*sizeof(double) );
 
   if (jvar >= D_VEL1_DT && jvar <= D_P_DT) {
     if ( pd->TimeIntegration == STEADY ) EH(-1, "Unsteady GD for Steady problem");
@@ -1404,6 +1918,11 @@ load_variable (double *x_var,        /* variable value */
    case SHELL_CURVATURE:
       *x_var = fv->sh_K;
       var = SHELL_CURVATURE;
+      *d_x_var = 1.;
+      break;
+   case SHELL_CURVATURE2:
+      *x_var = fv->sh_K2;
+      var = SHELL_CURVATURE2;
       *d_x_var = 1.;
       break;
     case SHELL_TENSION:
@@ -1484,6 +2003,11 @@ load_variable (double *x_var,        /* variable value */
     case SHELL_NORMAL2:
       *x_var = fv->n[1];
       var = SHELL_NORMAL2;
+      *d_x_var = 1.;
+      break;
+    case SHELL_NORMAL3:
+      *x_var = fv->n[2];
+      var = SHELL_NORMAL3;
       *d_x_var = 1.;
       break;
     case ACOUS_PREAL:
@@ -1595,6 +2119,16 @@ load_variable (double *x_var,        /* variable value */
       *x_var = fv->sh_cross_shear;
       var = SHELL_CROSS_SHEAR;
       *d_x_var = 1.;
+      break;
+    case TFMP_PRES:
+      *x_var = fv->tfmp_pres;
+      var = TFMP_PRES;
+      *d_x_var = 1;
+      break;
+    case TFMP_SAT:
+      *x_var = fv->tfmp_sat;
+      var = TFMP_SAT;
+      *d_x_var = 1;
       break;
     case MAX_STRAIN:
       *x_var = fv->max_strain;
@@ -2076,7 +2610,6 @@ load_variable (double *x_var,        /* variable value */
       var = PHASE1 + b;
       *d_x_var = 1.;
       break;
-      
 
       /* if variable type is mesh position **not** mesh displacement*/
     case MESH_POSITION1:
@@ -2123,6 +2656,22 @@ load_variable (double *x_var,        /* variable value */
       *x_var = fv->porosity;
       var = POR_GAS_PRES;
       *d_x_var = 1.;
+      break;
+     /* adding velocity magnitude, i.e. SPEED  */
+    case SPEED:
+      for(b=0 ; b<pd->Num_Dim ; b++)	{
+          *x_var += SQUARE(fv->v[b]);
+          }
+      if(pd->CoordinateSystem == SWIRLING || pd->CoordinateSystem == PROJECTED_CARTESIAN)
+          { *x_var += SQUARE(fv->v[pd->Num_Dim]);  }
+      *x_var = sqrt(*x_var);
+      var = VELOCITY1;
+      *d_x_var = 1./(*x_var);
+      for(b=0 ; b<pd->Num_Dim ; b++)	{
+          d_vect_var[b] += fv->v[b]*(*d_x_var);
+          }
+      if(pd->CoordinateSystem == SWIRLING || pd->CoordinateSystem == PROJECTED_CARTESIAN)
+          { d_vect_var[pd->Num_Dim] += fv->v[pd->Num_Dim]*(*d_x_var);  }
       break;
 
       /* if variable type is a time derivative */
@@ -2428,7 +2977,223 @@ bc_eqn_index(int id,               /* local node number                 */
 /*****************************************************************************/
 
 int
-evaluate_time_func(const double time,
+bc_eqn_index_stress(int id,               /* local node number                 */
+	            int I,                /* processor node number             */
+	            int bc_input_id,      /* boundary condition number         */
+	            int curr_matID,       /* Current material ID */
+	            int kdir,             /* coordinate index for stress components */
+                    int mode,       /* Stress mode number */
+	            int *eqn,       /* eqn to which this condition is applied     */
+	            int *matID_retn, /* material ID to apply this eqn on           */
+	            VARIABLE_DESCRIPTION_STRUCT **vd_retn)
+
+    /*************************************************************************
+     *
+     * bc_eqn_index_stress():
+     *
+     * Check to see if this BC on this node is applicable
+     *     (i.e. no other overriding Dirichlet conditions),
+     * Find the global unknown number for applying this condition. This is clone
+     * of bc_eqn_index repurposed to handle stress equations
+     *
+     * NOTE: This must be called after the element basis functions have
+     *       been set up.
+     *
+     * Input
+     * -------
+     *
+     * id = local node number
+     * I  = processor node number
+     * bc_input_id = boundary condition number
+     * curr_matID = Current material index of the element that we
+     *              calling from
+     * BC_desc  = description structure for current boundary condition
+     *
+     *
+     * Output
+     * -------
+     *  *eqn = Variable type of the equation to which this boundary condition
+     *        is applied.
+     *  *matID_retn = Material number of the equation to which this
+     *                boundary condition is applied.
+     *
+     * Return
+     * --------
+     *   This function returns the index in the solution vector of the
+     *   equation to which this boundary condition will be applied.
+     *   If the boundary condition is not to be applied, this function
+     *   return the value of -1.
+     *
+     *  *matID_retn = returns the material id corresponding to the unknown
+     *                on which this boundary condition is applied. Even if
+     *                the underyling variable type has a value of -1, this
+     *                variable will not be -1.
+     *************************************************************************/
+{
+  int ieqn,  i_calc,  bc_node;
+  int matID, index_eqn, num, node_offset;
+  int  i, index;
+  int ndofs_ieqn;
+  NODAL_VARS_STRUCT *nv;
+  struct Boundary_Condition *bc = BC_Types + bc_input_id;
+  struct BC_descriptions *bc_desc = bc->desc;
+  NODE_INFO_STRUCT *node = Nodes[I];
+  VARIABLE_DESCRIPTION_STRUCT *vd;
+  nv = node->Nodal_Vars_Info;
+
+  /*
+   *  Find equation number from the BC description
+   *  structure
+   */
+  ieqn = bc_desc->equation;
+  /* Sanity check */
+  if (ieqn != R_STRESS11) EH(-1,"You can't be here");
+
+  matID = curr_matID;
+
+  switch (mode) {
+
+    case 0:
+      ieqn = R_STRESS11 + kdir;
+      break;
+
+    case 1:
+      ieqn = R_STRESS11_1 + kdir;
+      break;
+
+    case 2:
+      ieqn = R_STRESS11_2 + kdir;
+      break;
+
+    case 3:
+      ieqn = R_STRESS11_3 + kdir;
+      break;
+
+
+    case 4:
+      ieqn = R_STRESS11_4 + kdir;
+      break;
+
+    case 5:
+      ieqn = R_STRESS11_5 + kdir;
+      break;
+
+    case 6:
+      ieqn = R_STRESS11_6 + kdir;
+      break;
+
+    case 7:
+      ieqn = R_STRESS11_7 + kdir;
+      break;
+
+    default:
+      EH(-1,"Maximum 8 modes allowed here!");
+      break;
+  }
+
+
+  /*
+   * If the equation has zero degrees of freedom at this node
+   * return. Otherwise, get the number of variable description
+   * structures with this variable type. Don't count more
+   * than one species unknown per material at this point.
+   */
+  if ((ndofs_ieqn = get_nv_ndofs_modMF(nv, ieqn)) <= 0) {
+    return -1;
+  }
+
+
+  /*
+   *  Find out the offset under non-conflicting conditions
+   *  If a boundary condition isn't to be applied under non-
+   *  conflicting conditions, it won't be applied under
+   *  conflicting conditions. So exit here if bc is not
+   *  to be applied. 
+   */
+  node_offset = get_nodal_unknown_offset(nv, ieqn, matID, 0, &vd);
+  if (node_offset < 0) {
+    return -1;
+  }
+
+  /*
+   * check the processor node number, I, against BC_dup_nodes[]
+   * to see if this node is at an intersection of side-sets
+   *
+   * HKM -> the search below seems like a time-waste. In lieu of
+   *        that, we could set up an added  bit field in
+   *        Node_Info struct or elsewhere where we could store the
+   *        results of this search (or just the need to do the
+   *        search).
+   */
+  bc_node = in_list(I, 0, BC_dup_ptr+1, BC_dup_nodes);
+  if (bc_node != -1) {
+    /* 
+     * current node is in the BC_duplication list.
+     * The current boundary condition may have been deleted.
+     * If the current boundary condition is a rotated boundary
+     * condition, it may have been moved to another coordinate
+     * direction.
+     */
+    i_calc = -1;
+    if (ieqn <= LAST_REAL_EQ) {
+      i_calc = search_bc_dup_list(bc_input_id,
+				  BC_dup_list[bc_node][node_offset]);
+    } else {
+      EH(-1,"Equation not in list ");
+    }
+
+    /*
+     * The current boundary condition has been deleted from application
+     * at the current node due to a conflict with another boundary
+     * condition. Return a -1.
+     */
+    if (i_calc == -1) {
+      return -1;
+    }
+  }
+
+  /*
+   * If the regular unknown equation is replaced by a Dirichlet
+   * condition at this node, return -1
+   */
+  if (node->DBC) {
+    if (((int) node->DBC[node_offset]) != -1) {
+      return -1;
+    }
+  } 
+
+  /*
+   * Set up the return variables
+   */
+  *matID_retn = matID;
+  *eqn = ieqn;
+  index_eqn = node->First_Unknown + node_offset;
+  
+  /*
+   * HKM -> we can put this section into
+   *        a subroutine
+   */
+  if (vd_retn) {
+    *vd_retn = NULL;
+    num = nv->Num_Var_Desc_Per_Type[ieqn];
+    for (i = 0; i < num; i++) {
+      index = nv->Var_Type_Index[ieqn][i];
+      vd = nv->Var_Desc_List[index];
+      if (matID == vd->MatID ||
+	  (! (*vd_retn) && vd->MatID == -1)) {
+	*vd_retn = vd;
+      }
+    }
+  }
+
+  return index_eqn;
+} /* END of routine bc_eqn_index_stress                                      */
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+int
+evaluate_time_func(const double current_time,
 		   double *f_time,      /* computed time function */
 		   const int bc_input_id)
     
@@ -2437,8 +3202,15 @@ evaluate_time_func(const double time,
       * Function which multiplies a time function by previously
       * loaded GD conditions.
       ************************************************************************/
-{  
+{
+  double time = current_time;
   int time_function;
+  /* Check if max time was specified and reset time if greater than max time */
+  if (BC_Types[bc_input_id].BC_Data_Int[4] == GD_TIME_MAX) {
+    if (time > BC_Types[bc_input_id].BC_Data_Float[2]) {
+      time = BC_Types[bc_input_id].BC_Data_Float[2];
+    }
+  }
 
   /* ---- Find variable number and species number */
   time_function = BC_Types[bc_input_id].BC_Data_Int[2];

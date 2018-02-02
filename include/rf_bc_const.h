@@ -216,6 +216,7 @@
 #define LS_SPECIAL        19
 
 /* define some other catagories */
+#define STRESS  6 /* Six components in each mode */
 #define VECTOR  3
 #define SCALAR  1
 
@@ -375,35 +376,42 @@
 #define GD_TIME_EXP  400002
 #define GD_TIME_SIN  400003
 #define GD_TIME_TABLE  400004
+#define GD_TIME_MAX  400005
 
 /* velocity constants in cartesian form */
 
 #define U_BC     1
 #define UVARY_BC 3
+#define U_PARABOLA_BC 35
 #define UUSER_BC 4
+#define UUSER_COLLOC_BC 5
 
-#define PU_BC     5
+#define PU_BC     6
 
 #define V_BC     10
 #define VVARY_BC 30
+#define V_PARABOLA_BC 305
 #define VUSER_BC 40
+#define VUSER_COLLOC_BC 50
 
-#define PV_BC     50
+#define PV_BC     60
 
 #define W_BC     100
 
 #define WVARY_BC 300
+#define W_PARABOLA_BC 3005
 #define WUSER_BC 400
+#define WUSER_COLLOC_BC 500
 
-#define PW_BC     500
+#define PW_BC     600
 
-#define DX_USER_BC 510
-#define DY_USER_BC 520
-#define DZ_USER_BC 530
+#define DX_USER_BC 710
+#define DY_USER_BC 720
+#define DZ_USER_BC 730
 
-#define DX_USER_NODE_BC 511
-#define DY_USER_NODE_BC 521
-#define DZ_USER_NODE_BC 531
+#define DX_USER_NODE_BC 711
+#define DY_USER_NODE_BC 721
+#define DZ_USER_NODE_BC 731
 
 /* velocity constants in normal/tangential form */
 
@@ -476,6 +484,8 @@
 #define S22_7_BC    71004
 #define S23_7_BC    71005
 #define S33_7_BC    71006
+
+#define STRESS_DEVELOPED_BC  81001
 
 /* velocity gradient */
 
@@ -572,6 +582,8 @@
 #define LIGHTD_TRANS_BC   9700000
 #define LIGHTP_JUMP_BC   9510000
 #define LIGHTM_JUMP_BC   9610000
+#define LIGHTP_JUMP_2_BC   9510001
+#define LIGHTM_JUMP_2_BC   9610001
 
 /* species unknown variables */
 
@@ -618,6 +630,7 @@
 #define POR_LIQ_FLUX_FILL_BC 25900500
 #define POROUS_TEMP_BC  26000000
 #define P_LIQ_USER_BC   26000001
+#define POROUS_SINK_BC   26000003
 
 /* real solid displacement */
 #define DX_RS_BC     40000001
@@ -685,6 +698,8 @@
 #define PLANEY_BC 950000000
 #define PLANEZ_BC 960000000
 #define PLANE_BC  961000000
+#define FILLET_BC  961123400
+#define ROLL_FLUID_BC  961124500
 #define TENSION_SHEET_BC 96210200
 #define MOVING_PLANE_BC  96110000
 #define SM_PLANE_BC 961200000        /* Solid Model PLANE BC */
@@ -767,6 +782,10 @@
 #define LINEAR_WETTING_SIC_BC  964500009    
 #define VELO_STREAMING_BC  964600000
 #define HYSTERESIS_WETTING_BC 964700000
+#define AIR_FILM_BC  964800000
+#define AIR_FILM_ROT_BC  964810000
+#define VELO_SLIP_FLUID_BC  964900000
+#define VELO_SLIP_ROT_FLUID_BC  964910000
 
 
 /* Structural Shells */
@@ -782,6 +801,9 @@
 #define SH_LUBP_BC          970000013
 #define SH_LUBP_SOLID_BC    970000014
 #define SH_LUBP_SOLID_RS_BC    970000015
+#define SH_S11_WEAK_BC      970000016
+#define SH_S22_WEAK_BC      970000017
+
 
 /* Shell variables that are not structural shells */
 #define SH_GAMMA1_BC            980000001
@@ -972,7 +994,11 @@
 #define SH_P_OPEN_USER_BC 777000021
 #define LUB_PRESS_2_BC  777000022
 #define SHELL_OPEN_PRESS_2_BC 777000023
+#define LUB_STATIC_BC 777000024
 
+#define SHELL_TFMP_PRES_BC        777000030
+#define SHELL_TFMP_FREE_LIQ_BC    777000041
+#define SHELL_TFMP_NUM_DIFF_BC    777000042
 
 
 /* Vectors used for rotations */
@@ -1171,6 +1197,7 @@ struct Boundary_Condition {
   dbl   BC_Data_Float[MAX_BC_FLOAT_DATA];
   int   len_u_BC;		/* number of elements in the user constant 
 				   list (0 most of the time) */
+  int   max_DFlt;
   int   Storage_ID;             /* ID of the quadature point storage for this bc 
 				 * Must be positive for it to exist. zero means
 				 * that it does not yet exist 

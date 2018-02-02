@@ -130,6 +130,14 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
   double        eps;
   double        *lambda=NULL, *lambdaEnd=NULL;
   double	hunt_par, dhunt_par, hunt_par_old;	/* hunting continuation parameter */
+  double        dhunt_par_max=1.0, dhunt_par_min=0., dhunt_par_0=0.1;
+  double        dhunt_par_new=0.1, dhunt_par_old;
+  int           *log_capable = NULL, log_ID=-1;
+#ifdef LOG_HUNTING_PLEASE
+  int		log_hunt = TRUE;
+#else
+  int		log_hunt = FALSE;
+#endif
   double        timeValueRead = 0.0;
 
   /* 
@@ -149,7 +157,8 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
   double	*gvec=NULL;
   double        ***gvec_elem;
   FILE          *file=NULL;
-  double 	toler_org[3],damp_org;
+  double 	toler_org[3];
+  /*  double damp_org; */
   
   struct Results_Description  *rd=NULL;
   
@@ -184,7 +193,7 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
   toler_org[0] = custom_tol1;
   toler_org[1] = custom_tol2;
   toler_org[2] = custom_tol3;
-  damp_org = damp_factor1;
+  /* damp_org = damp_factor1; */
 
   is_steady_state = TRUE;
 
@@ -395,6 +404,7 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 
   aldALC        = Ivector_birth(nHC);
   const_delta_s = Ivector_birth(nHC);
+  log_capable = Ivector_birth(nHC);
 
   /*
 
@@ -418,6 +428,13 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 
     lambda[iHC]       = hunt[iHC].BegParameterValue;
     lambdaEnd[iHC]    = hunt[iHC].EndParameterValue;
+    if(lambda[iHC] > 0 && lambdaEnd[iHC] > 0 && lambda[iHC] != lambdaEnd[iHC])
+         {
+          log_capable[iHC] = TRUE;  
+          if(log_ID == -1) log_ID = iHC;
+         }
+    else
+         {log_capable[iHC] = FALSE;  }
 
     if ((lambdaEnd[iHC]-lambda[iHC]) > 0.0)
     {
@@ -460,15 +477,38 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 
   /*  define continuation parameter */
 
-  if(hunt[0].EndParameterValue == hunt[0].BegParameterValue)
+  iHC = MAX(0,log_ID);
+  dhunt_par = 0.0;
+  if(hunt[iHC].EndParameterValue == hunt[iHC].BegParameterValue)
  	{	hunt_par = 1.0;	}
   else
  	{
-	  hunt_par = (path1[0]-hunt[0].BegParameterValue)
-	      /(hunt[0].EndParameterValue - hunt[0].BegParameterValue)  ;
-          hunt_par=fabs(hunt_par);
+          if(log_hunt && log_capable[iHC])
+              {
+	         hunt_par = (log10(path1[iHC])-log10(hunt[iHC].BegParameterValue))
+	             /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+	         dhunt_par_min = log10(1.0+aldALC[iHC]*hunt[iHC].Delta_s_min/hunt[iHC].BegParameterValue)
+	             /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+	         dhunt_par_max = log10(1.0+aldALC[iHC]*hunt[iHC].Delta_s_max/hunt[iHC].BegParameterValue)
+	             /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+	         dhunt_par_0 = log10(1.0+aldALC[iHC]*hunt[iHC].Delta_s0/hunt[iHC].BegParameterValue)
+	             /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+              }  else   {
+	         hunt_par = (path1[iHC]-hunt[iHC].BegParameterValue)
+	             /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+	         dhunt_par_min = aldALC[iHC]*hunt[iHC].Delta_s_min
+	             /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+	         dhunt_par_max = aldALC[iHC]*hunt[iHC].Delta_s_max
+	             /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+	         dhunt_par_0 = aldALC[iHC]*hunt[iHC].Delta_s0
+	             /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+              }
+           hunt_par=fabs(hunt_par);  
  	}
   hunt_par_old = hunt_par;
+  dhunt_par = dhunt_par_old = dhunt_par_0;
+    if (dhunt_par_0 > dhunt_par_max) 
+    { dhunt_par_0 = dhunt_par_max; }
 
   /* Call prefront (or mf_setup) if necessary */
   if (Linear_Solver == FRONT)
@@ -705,33 +745,65 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	  } 
 	  break;
       }
+    }   /*  end of iHC loop */
 
       /*
        * ADJUST NATURAL PARAMETER
        */
 
+    for (iHC=0;iHC<nHC;iHC++) {
       update_parameterHC(iHC, path1[iHC], x, xdot, x_AC, delta_s[iHC], cx, exo, dpi); 
     }   /*  end of iHC loop */
 
-  	if(hunt[0].EndParameterValue == hunt[0].BegParameterValue)
+        iHC = MAX(0,log_ID);
+  	if(hunt[iHC].EndParameterValue == hunt[iHC].BegParameterValue)
  		{	hunt_par = 1.0;	}
 	else
  		{
-		  hunt_par = (path1[0]-hunt[0].BegParameterValue)
-		      /(hunt[0].EndParameterValue - hunt[0].BegParameterValue)  ;
-                  hunt_par=fabs(hunt_par);
+                  if(log_hunt && log_capable[iHC])
+                       {
+	                 hunt_par = (log10(path1[iHC])-log10(hunt[iHC].BegParameterValue))
+	                     /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+                         if(hunt_par > 0)	{
+	                        dhunt_par = (log10(path1[iHC])-log10(path[iHC]))
+	      /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+                                }
+                       }  else   {
+		         hunt_par = (path1[iHC]-hunt[iHC].BegParameterValue)
+		             /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue)  ;
+                         if(hunt_par > 0)	{
+		                 dhunt_par = (path1[iHC]-path[iHC])
+		                       /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue)  ;
+                                }
+                       }
+/*                  hunt_par=fabs(hunt_par);*/
  		}
+       if(log_hunt)
+          {
+	  for (iHC=0;iHC<nHC;iHC++) {
+              if(log_capable[iHC])
+                {
+                 delta_s[iHC] = -hunt[iHC].BegParameterValue *
+                     pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,hunt_par-dhunt_par);
+                 delta_s[iHC] += hunt[iHC].BegParameterValue *
+                     pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,hunt_par);
+                 }  else  {
+                 delta_s[iHC] = dhunt_par*
+           (hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                 }
+              }
+           }
 
     /*
      * IF STEP CHANGED, REDO FIRST ORDER PREDICTION
      */
+ if (hunt_par >= 1.0) { alqALC = -1;  }
 
     if(alqALC == -1)
     {
       DPRINTF(stderr,"\n\t ******** LAST PATH STEP!\n");
       dcopy1(numProcUnknowns,x_old,x);
 
-      dhunt_par = hunt_par-hunt_par_old;
       switch (Continuation) {
       case HUN_ZEROTH:
           break;
@@ -763,14 +835,14 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	  DPRINTF(stderr, "\n\tFirst Order Hunting:");
 	  break; }
       DPRINTF(stderr, "\n\tStep number: %4d of %4d (max)", n+1, MaxPathSteps);
-      DPRINTF(stderr, "\n\tAttempting solution at: theta = %g",hunt_par);
+      DPRINTF(stderr, "\n\tAttempting solution at: theta = %g ;  step = %g",hunt_par,dhunt_par);
       for (iHC=0;iHC<nHC;iHC++) {
 	switch (hunt[iHC].Type) {
 	case 1: /* BC */
 	    DPRINTF(stderr, "\n\tBCID=%3d DFID=%5d", hunt[iHC].BCID, hunt[iHC].DFID);
 	    break;
 	case 2: /* MT */
-	    DPRINTF(stderr, "\n\tMTID=%3d MPID=%5d", hunt[iHC].MTID, hunt[iHC].MPID);
+	    DPRINTF(stderr, "\n\tMTID=%3d MPID=%5d", hunt[iHC].MTID+1, hunt[iHC].MPID);
 	    break;
  	case 3: /* AC */
  	    DPRINTF(stderr, "\n\tACID=%3d DFID=%5d", hunt[iHC].BCID, hunt[iHC].DFID);
@@ -877,8 +949,8 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
                 if( Num_Proc > 1 ) {
                      MPI_Allreduce( &evol_local, &evol_global, 1,
                                     MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-                }
                 evol_local = evol_global;
+                }
 #endif
                 DPRINTF(stderr, "\tMT[%4d] VC[%4d]=%10.6e Param=%10.6e\n",
                         augc[iAC].MTID, augc[iAC].VOLID, evol_local,
@@ -984,7 +1056,7 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 
       if (!converged) {
 
-	if (ni > 10) {
+	if (ni > Max_Newton_Steps/2) {
  	  DPRINTF(stderr,"\n ************************************\n");
  	  DPRINTF(stderr," W: Did not converge in Newton steps.\n");
  	  DPRINTF(stderr,"    Find better initial guess.       \n");
@@ -1000,6 +1072,35 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
         {
 	DPRINTF(stderr, "\n\tFailed to converge:\n");
 
+        if(log_hunt)
+         {
+	  dhunt_par *= 0.5;
+          hunt_par = hunt_par_old + dhunt_par;
+	  for (iHC=0;iHC<nHC;iHC++) {
+              if(log_capable[iHC])
+                {
+                 path1[iHC] = hunt[iHC].BegParameterValue *
+                     pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,hunt_par);
+                 }  else  {
+                 path1[iHC] = hunt[iHC].BegParameterValue +
+                      hunt_par*(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                 }
+              }
+
+	  alqALC = 1;
+
+	  DPRINTF(stderr, "Decreasing step-length to %10.6e.\n", dhunt_par);
+
+	  if (dhunt_par < dhunt_par_min) {
+ 	    DPRINTF(stderr,"\n X: C step-length reduced below minimum.");
+ 	    DPRINTF(stderr,"\n theta: %g ;  theta_min: %g",dhunt_par,dhunt_par_min);
+ 	    DPRINTF(stderr,"\n    Program terminated.\n");
+	    /* This needs to have a return value of 0, indicating
+	     * success, for the continuation script to not treat this
+	     * as a failed command. */
+	    exit(0);
+            }
+         } else  {
 	for (iHC=0;iHC<nHC;iHC++) {
 
 	  delta_s[iHC] *= 0.5;
@@ -1029,6 +1130,29 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	     * as a failed command. */
 	    exit(0);
 	  } 
+	}  /* end of iHC loop  */
+    alqALC = 1;
+
+    for (iHC=0;iHC<nHC;iHC++) {
+	
+      switch (aldALC[iHC]) {
+      case -1: /* REDUCING PARAMETER DIRECTION */
+	  if (path1[iHC] <= lambdaEnd[iHC]) { 
+	    alqALC = -1;
+	    path1[iHC] = lambdaEnd[iHC];
+	    delta_s[iHC] = path[iHC]-path1[iHC];
+	  } 
+	  break;
+      case +1: /* RISING PARAMETER DIRECTION */
+	  if (path1[iHC] >= lambdaEnd[iHC]) { 
+	    alqALC = -1;
+	    path1[iHC] = lambdaEnd[iHC];
+	    delta_s[iHC] = path1[iHC]-path[iHC];
+	  } 
+	  break;
+      }
+    }   /*  end of iHC loop */
+           }
 #ifdef PARALLEL
               check_parallel_error("\t");
 #endif
@@ -1037,23 +1161,31 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	   * ADJUST NATURAL PARAMETER
 	   */
 	    
+	for (iHC=0;iHC<nHC;iHC++) {
 	  update_parameterHC(iHC, path1[iHC], x, xdot, x_AC, delta_s[iHC], cx, exo, dpi);
 	}  /* end of iHC loop  */
 
-  	if(hunt[0].EndParameterValue == hunt[0].BegParameterValue)
+        iHC = MAX(0,log_ID);
+  	if(hunt[iHC].EndParameterValue == hunt[iHC].BegParameterValue)
  		{	hunt_par = 1.0;	}
-	else
+	else if(log_hunt)
  		{
-	  	hunt_par = (path1[0]-hunt[0].BegParameterValue)
-	     	 /(hunt[0].EndParameterValue - hunt[0].BegParameterValue)  ;
-                hunt_par=fabs(hunt_par);
+                 if(log_capable[iHC])
+                    {
+	             hunt_par = (log10(path1[iHC])-log10(hunt[iHC].BegParameterValue))
+	                /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+                    }  else   {
+	  	     hunt_par = (path1[iHC]-hunt[iHC].BegParameterValue)
+	     	        /(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue)  ;
+                    }
+          /*      hunt_par=fabs(hunt_par);  */
+	        dhunt_par = hunt_par-hunt_par_old;
  		}
 
 	/*
 	 * GET ZERO OR FIRST ORDER PREDICTION
 	 */
 
-	dhunt_par = hunt_par-hunt_par_old;
 
 	switch (Continuation) {
 	case HUN_ZEROTH:
@@ -1079,15 +1211,21 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	      { update_parameterAC(iAC, x, xdot, x_AC, cx, exo, dpi); }
 	  }
 
-  		if(hunt[0].EndParameterValue == hunt[0].BegParameterValue)
+                iHC = MAX(0,log_ID);
+  		if(hunt[iHC].EndParameterValue == hunt[iHC].BegParameterValue)
  			{	hunt_par = 1.0;	}
   		else
  			{
-	  		hunt_par = (path1[0]-hunt[0].BegParameterValue)
-	      			/(hunt[0].EndParameterValue - hunt[0].BegParameterValue)  ;
-                        hunt_par=fabs(hunt_par);
- 			}
-
+                         if(log_hunt && log_capable[iHC])
+                             {
+	                      hunt_par = (log10(path1[iHC])-log10(hunt[iHC].BegParameterValue))
+	                        /(log10(hunt[iHC].EndParameterValue) - log10(hunt[iHC].BegParameterValue));
+                             }  else   {
+	  		      hunt_par = (path1[iHC]-hunt[iHC].BegParameterValue)
+	      			/(hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue)  ;
+                              hunt_par=fabs(hunt_par);
+ 			     }
+                        }
  	}
  	else if (inewton == -1)
  	{
@@ -1133,6 +1271,16 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
  	         (damp_factor2 <= 1. && damp_factor2 >= 0.) &&
         		 (damp_factor3 <= 1. && damp_factor3 >= 0.))
  		{
+                if(hunt[0].BCID == -1)
+                   {
+	            if (Write_Intermediate_Solutions == 0) {    
+	                 write_solution(ExoFileOut, resid_vector, x, x_sens_p, x_old, 
+			        xdot, xdot_old, tev, tev_post,NULL,  rd, gindex,
+			        p_gsize, gvec, gvec_elem, &nprint, delta_s[0], 
+ 			        theta, custom_tol1, NULL, exo, dpi);
+	                 nprint++;
+ 	                 }
+ 	         }
  		custom_tol1 *= 100.;
  		custom_tol2 *= 100.;
  		custom_tol3 *= 100.;
@@ -1140,11 +1288,22 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
  		}
  		else
  		{
+                if(hunt[0].BCID == -1)
+                   {
+	            if (Write_Intermediate_Solutions == 0) {    
+ 	DPRINTF(stderr,"  writing solution %g  \n",damp_factor1);
+	                 write_solution(ExoFileOut, resid_vector, x, x_sens_p, x_old, 
+			        xdot, xdot_old, tev, tev_post,NULL,  rd, gindex,
+			        p_gsize, gvec, gvec_elem, &nprint, delta_s[0], 
+ 			        theta, damp_factor1, NULL, exo, dpi);
+	                 nprint++;
+ 	                 }
+ 	         }
  		damp_factor1 *= 2.0;
 		damp_factor1 = MIN(damp_factor1,1.0);
  	DPRINTF(stderr,"  damping factor %g  \n",damp_factor1);
  		}
- 	}
+ 	  }
  
 
       }  /* end of !converged */
@@ -1158,7 +1317,8 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
     custom_tol1 = toler_org[0];
     custom_tol2 = toler_org[1];
     custom_tol3 = toler_org[2];
-    damp_factor1 = damp_org;
+    /*  damp_factor1 = damp_org;  */
+    damp_factor1 = 1.0;
     DPRINTF(stderr,
 	    "\n\tStep accepted, theta (proportion complete) = %10.6e\n",
 	    hunt_par);
@@ -1170,7 +1330,7 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	  break;
       case 2:		/* MT */
 	  DPRINTF(stderr, "\tStep accepted, MTID=%3d MPID=%5d",
-		  hunt[iHC].MTID, hunt[iHC].MPID);
+		  hunt[iHC].MTID+1, hunt[iHC].MPID);
 	  break;
       case 3:		/* AC */
 	  DPRINTF(stderr, "\tStep accepted, ACID=%3d DFID=%5d",
@@ -1184,6 +1344,22 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
      * check path step error, if too large do not enlarge path step 
      */
 
+    if (log_hunt)
+      {
+      if ((ni == 1) && (n != 0) && (!const_delta_s[iHC])) 
+        {
+	dhunt_par_new = path_step_control(num_total_nodes, 
+					     dhunt_par, dhunt_par_old, 
+					     x, 
+					     eps, 
+					     &success_ds, 
+					     cont->use_var_norm, inewton);
+	if (dhunt_par_new > dhunt_par_max) {dhunt_par_new = dhunt_par_max;}
+        } else {
+	  success_ds = 1;
+	  dhunt_par_new = dhunt_par;
+        }
+      }  else  {
     for (iHC=0;iHC<nHC;iHC++) {
 
       if ((ni == 1) && (n != 0) && (!const_delta_s[iHC])) 
@@ -1202,6 +1378,7 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	delta_s_new[iHC] = delta_s[iHC];
       }
     }
+      }
 	  
     /* 
      * determine whether to print out the data or not 
@@ -1243,13 +1420,9 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
     dcopy1(nHC,delta_s_old  ,delta_s_older );
     dcopy1(nHC,delta_s      ,delta_s_old   );
     dcopy1(nHC,delta_s_new  ,delta_s       );
-/*
-    delta_s_oldest = delta_s_older;
-    delta_s_older = delta_s_old;
-    delta_s_old = delta_s;
-    delta_s = delta_s_new;
-*/
-    hunt_par_old=hunt_par;
+    dhunt_par_old = dhunt_par;
+    dhunt_par = dhunt_par_new;
+    hunt_par_old = hunt_par;
     if ( nAC > 0) {
       dcopy1(nAC, x_AC, x_AC_old);
     }
@@ -1258,6 +1431,29 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
      * INCREMENT/DECREMENT PARAMETER
      */
 
+    if (log_hunt)
+      {
+       hunt_par += dhunt_par;
+       if(hunt_par > 1.0)
+            {
+             dhunt_par = 1.0 - (hunt_par - dhunt_par);
+             hunt_par = 1.0;
+            }
+       for (iHC=0;iHC<nHC;iHC++) {
+             if(log_capable[iHC])
+                    {
+           path1[iHC] = hunt[iHC].BegParameterValue*
+   pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,hunt_par);
+           path[iHC] = hunt[iHC].BegParameterValue*
+   pow(hunt[iHC].EndParameterValue/hunt[iHC].BegParameterValue,hunt_par-dhunt_par);
+                    }  else  {
+           path1[iHC] = hunt[iHC].BegParameterValue + hunt_par*
+                (hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+           path[iHC] = hunt[iHC].BegParameterValue + (hunt_par-dhunt_par)*
+                (hunt[iHC].EndParameterValue - hunt[iHC].BegParameterValue);
+                    }
+          }
+      }  else  {
 
     for (iHC=0;iHC<nHC;iHC++) {
 
@@ -1271,11 +1467,14 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
 	  path1[iHC] = path[iHC] + delta_s[iHC];
 	  break;
       }
+    }  /*  end of iHC loop */
+      }
 	  
       /*
        * ADJUST NATURAL PARAMETER
        */
 	
+    for (iHC=0;iHC<nHC;iHC++) {
       update_parameterHC(iHC, path1[iHC], x, xdot, x_AC, delta_s[iHC], cx, exo, dpi); 
     }  /*  end of iHC loop */
 
@@ -1283,15 +1482,6 @@ hunt_problem(Comm_Ex *cx,	/* array of communications structures */
      * GET FIRST ORDER PREDICTION
      */
 
-	  if(hunt[0].EndParameterValue == hunt[0].BegParameterValue)
- 		{	hunt_par = 1.0;	}
-  		else
- 		{
-	  	hunt_par = (path1[0]-hunt[0].BegParameterValue)
-	      		/(hunt[0].EndParameterValue - hunt[0].BegParameterValue)  ;
-                hunt_par=fabs(hunt_par);
- 		}
-    dhunt_par = hunt_par-hunt_par_old;
     switch (Continuation) {
     case HUN_ZEROTH:
 	break;

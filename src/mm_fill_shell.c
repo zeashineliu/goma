@@ -6558,6 +6558,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
   dbl H_U, dH_U_dtime, H_L, dH_L_dtime;
   dbl dH_U_dX[DIM],dH_L_dX[DIM], dH_dtime_dmesh[DIM][MDE];
   dbl dH_dtime_drealsolid[DIM][MDE];
+  dbl dH_dtime_dnormal[DIM][MDE];
   dbl dH_U_dp, dH_U_ddh;
   dbl veloU[DIM], veloL[DIM];
   dbl diffusion,  source;
@@ -6606,7 +6607,6 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
   /*** CALCULATE FLOW RATE FROM FUNCTION **************************************/
   calculate_lub_q_v(EQN,  time, dt, xi, exo); //PRS: NEED TO DO SOMETHING HERE
 
-
   /*** CALCULATE PHYSICAL PROPERTIES AND SENSITIVITIES ************************/
 
   /* Lubrication height from model */
@@ -6624,12 +6624,38 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
   switch ( mp->FSIModel ) {
   case FSI_MESH_CONTINUUM:
   case FSI_MESH_UNDEF:
+  case FSI_SHELL_ONLY_UNDEF:
     for ( i = 0; i < dim; i++) {
       H -= fv->snormal[i] * fv->d[i];
       if ( pd->TimeIntegration == TRANSIENT ) {
 	dH_dtime -= fv->snormal[i] * fv_dot->d[i];
       }
     }
+    break;
+
+  case FSI_SHELL_ONLY_MESH:
+    if ( (pd->e[R_SHELL_NORMAL1]) && (pd->e[R_SHELL_NORMAL2]) && (pd->e[R_SHELL_NORMAL3]))
+      {
+       for ( i = 0; i < dim; i++)
+          {
+           H -= fv->n[i] * fv->d[i];
+           if ( pd->TimeIntegration == TRANSIENT )
+             {
+              dH_dtime -= fv->n[i] * fv_dot->d[i] + fv_dot->n[i] * fv->d[i];
+             }
+          }
+      }
+    else
+      {
+       for ( i = 0; i < dim; i++)
+          {
+           H -= fv->snormal[i] * fv->d[i];
+           if ( pd->TimeIntegration == TRANSIENT )
+             {
+              dH_dtime -= fv->snormal[i] * fv_dot->d[i];
+             }
+          }
+      }
     break;
 
   case FSI_REALSOLID_CONTINUUM:
@@ -6642,7 +6668,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
     break;
   }
 
-  /* Check for nehative lubrication height, if so, get out */
+  /* Check for negative lubrication height, if so, get out */
   if(H <= 0.0)
    {
     neg_lub_height = TRUE;
@@ -6667,6 +6693,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
   switch ( mp->FSIModel ) {
   case FSI_MESH_CONTINUUM:
   case FSI_MESH_UNDEF:
+  case FSI_SHELL_ONLY_UNDEF:
     for ( i = 0; i < VIM; i++) {
       for ( b = 0; b < dim; b++) {
 	for ( k = 0; k < ei->dof[MESH_DISPLACEMENT1]; k++) {
@@ -6676,6 +6703,37 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	}
       }
     }
+    break;
+  case FSI_SHELL_ONLY_MESH:
+    if ((pd->e[R_SHELL_NORMAL1]) && (pd->e[R_SHELL_NORMAL2]) && (pd->e[R_SHELL_NORMAL3]))
+      {
+       for ( i = 0; i < VIM; i++)
+          {
+           for ( b = 0; b < dim; b++)
+              {
+               for ( k = 0; k < ei->dof[MESH_DISPLACEMENT1]; k++)
+                  {
+                   dH_dtime_dmesh[b][k] -= fv->n[i] * delta(i,b) * bf[MESH_DISPLACEMENT1]->phi[k] * (1+2*tt)/dt;
+                   dH_dtime_dmesh[b][k] -= fv_dot->n[i] * delta(i,b) * bf[MESH_DISPLACEMENT1]->phi[k];
+                  }
+              }
+          }
+      }
+    else
+      {
+       for ( i = 0; i < VIM; i++)
+          {
+           for ( b = 0; b < dim; b++)
+              {
+               for ( k = 0; k < ei->dof[MESH_DISPLACEMENT1]; k++)
+                  {
+	           jk = dof_map[k];
+                   dH_dtime_dmesh[b][k] -= fv->dsnormal_dx[i][b][jk] * fv_dot->d[i];
+                   dH_dtime_dmesh[b][k] -= fv->snormal[i] * delta(i,b) * bf[MESH_DISPLACEMENT1]->phi[k] * (1+2*tt)/dt;
+                  }
+              }
+          }
+      }
     break;
   case FSI_REALSOLID_CONTINUUM:
     for ( i = 0; i < VIM; i++) {
@@ -6691,6 +6749,29 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	}
       }
     }
+    break;
+  }
+
+  /* Lubrication height - shell normal sensitivity */
+  memset(dH_dtime_dnormal, 0.0, sizeof(double)*DIM*MDE);
+  switch ( mp->FSIModel ) {
+
+  case FSI_SHELL_ONLY_MESH:
+    if ( (pd->e[R_SHELL_NORMAL1]) && (pd->e[R_SHELL_NORMAL2]) && (pd->e[R_SHELL_NORMAL3]) )
+      {
+       for ( i = 0; i < VIM; i++)
+          {
+           for ( b = 0; b < dim; b++)
+              {
+               for ( k = 0; k < ei->dof[SHELL_NORMAL1]; k++)
+                  {
+                   dH_dtime_dnormal[b][k] -= fv_dot->d[i] * delta(i,b) * bf[SHELL_NORMAL1]->phi[k];
+                   dH_dtime_dnormal[b][k] -= fv->d[i] * delta(i,b) * bf[SHELL_NORMAL1]->phi[k] * (1+2*tt)/dt;
+                  }
+              }
+          }
+      }
+
     break;
   }
 
@@ -6720,8 +6801,8 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
       if ( pd->e[eqn] & T_SOURCE ) {
 	source = (mp->lubsource);
 	source += -dH_dtime;     
-	source += veloU[0]*dH_U_dX[0] + veloU[1]*dH_U_dX[1];
-	source -= veloL[0]*dH_L_dX[0] + veloL[1]*dH_L_dX[1];
+	source += (veloU[0]*dH_U_dX[0] + veloU[1]*dH_U_dX[1] - veloU[2]);
+	source -= (veloL[0]*dH_L_dX[0] + veloL[1]*dH_L_dX[1] - veloL[2]);
 	source *= phi_i;
       }
       source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
@@ -6872,7 +6953,9 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
       if (pd->v[var] && (
 			  mp->FSIModel == FSI_MESH_CONTINUUM ||
 			  mp->FSIModel == FSI_REALSOLID_CONTINUUM ||
-			  mp->FSIModel == FSI_MESH_UNDEF
+			  mp->FSIModel == FSI_MESH_UNDEF ||
+                          mp->FSIModel == FSI_SHELL_ONLY_MESH ||
+                          mp->FSIModel == FSI_SHELL_ONLY_UNDEF
 			  )) {
 	pvar = upd->vp[var];
 
@@ -6890,7 +6973,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	    
 	    /* Add diffusion term */
 	    diffusion = 0.0;
-	    if ( pd->e[eqn] & T_DIFFUSION ) {
+	    if ( pd->e[eqn] && T_DIFFUSION ) {
 	      for ( p = 0; p < dim; p++) {
 		diffusion += det_J * LubAux->dq_dx[p][b][j] * grad_II_phi_i[p];
 		diffusion += det_J * LubAux->q[p] * d_grad_II_phi_i_dmesh[p][b][jk];
@@ -6901,11 +6984,11 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 
 	    /* Add source term */
 	    source = 0.0;
-	    if ( pd->e[eqn] & T_SOURCE ) {
+	    if ( pd->e[eqn] && T_SOURCE ) {
 	      source += -dH_dtime_dmesh[b][j] * det_J;
 	      source += (mp->lubsource - dH_dtime) * fv->dsurfdet_dx[b][jk];
-	      source += (veloU[0]*dH_U_dX[0] + veloU[1]*dH_U_dX[1])*fv->dsurfdet_dx[b][jk];
-	      source -= (veloL[0]*dH_L_dX[0] + veloL[1]*dH_L_dX[1])*fv->dsurfdet_dx[b][jk];
+	      source += (veloU[0]*dH_U_dX[0] + veloU[1]*dH_U_dX[1] - veloU[2])*fv->dsurfdet_dx[b][jk];
+	      source -= (veloL[0]*dH_L_dX[0] + veloL[1]*dH_L_dX[1] - veloL[2])*fv->dsurfdet_dx[b][jk];
 	      source *= phi_i;
 	    }
 	    source *= wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
@@ -6937,7 +7020,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	    
 	    /* Add diffusion term */
 	    diffusion = 0.0;
-	    if ( pd->e[eqn] & T_DIFFUSION ) {
+	    if ( pd->e[eqn] && T_DIFFUSION ) {
 	      for ( p = 0; p < dim; p++) {
 		diffusion += det_J * LubAux->dq_drs[p][b][j] * grad_II_phi_i[p];
 	      }
@@ -6946,7 +7029,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 
 	    /* Add source term */
 	    source = 0.0;
-	    if ( pd->e[eqn] & T_SOURCE ) {
+	    if ( pd->e[eqn] && T_SOURCE ) {
 	      source += -dH_dtime_drealsolid[b][j] * det_J;
 	      source *= phi_i;
 	    }
@@ -6957,6 +7040,44 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	} // End of loop over b
       } // End of J_lubp_drs
 
+
+      /*
+       * J_lubp_shell_normal
+       */
+      var = SHELL_NORMAL1;
+      if (pd->v[var] &&  mp->FSIModel == FSI_SHELL_ONLY_MESH) {
+        pvar = upd->vp[var];
+
+        /*** Loop over dimensions of shell normals ***/
+        for ( b = 0; b < dim; b++) {
+          var = SHELL_NORMAL1 + b;
+          pvar = upd->vp[var];
+
+          /*** Loop over DOFs (j) ***/
+          for ( j=0; j < ei->dof[var]; j++) {
+
+            /* Add diffusion term */
+            diffusion = 0.0;
+            if ( pd->e[eqn] && T_DIFFUSION ) {
+              for ( p = 0; p < dim; p++) {
+                diffusion += det_J * LubAux->dq_dnormal[p][b][j] * grad_II_phi_i[p];
+              }
+            }
+            diffusion *= wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+
+
+            /* Add source term */
+            source = 0.0;
+            if ( pd->e[eqn] && T_SOURCE ) {
+              source += -dH_dtime_dnormal[b][j] * det_J;
+              source *= phi_i;
+            }
+            source *= wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
+
+            lec->J[peqn][pvar][i][j] += diffusion + source;
+          } // End of loop over j
+        } // End of loop over b
+      } // End of J_lubp_shell_normal
 
       /* 
        * J_lubp_D_sh_dh
@@ -6973,7 +7094,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	  
 	  /* Add diffusion term */
 	  diffusion = 0.0;
-	  if ( pd->e[eqn] & T_DIFFUSION ) {
+	  if ( pd->e[eqn] && T_DIFFUSION ) {
 	    for ( p = 0; p < dim; p++) {
 	      diffusion += det_J * LubAux->dq_ddh[p][j] * phi_j * grad_II_phi_i[p];
 	    }
@@ -6982,7 +7103,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	  
 	  /* Add source term */
 	  source = 0.0;
-	  if ( pd->e[eqn] & T_SOURCE ) {
+	  if ( pd->e[eqn] && T_SOURCE ) {
 	    // dh_time no longer has dependence here, as of 4/11/2011. Talk to PRS. 
 	    // If you wanted to add some volume expansion, however, there would be
 	    // a boost here. 
@@ -7009,7 +7130,7 @@ assemble_lubrication(const int EQN,     /* equation type: either R_LUBP or R_LUB
 	     phi_j = bf[var]->phi[j];
 
              diffusion = 0.;
-	     if (pd->e[eqn] & T_DIFFUSION)
+	     if (pd->e[eqn] && T_DIFFUSION)
 	       {
 		for (p = 0; p < VIM; p++) 
 	           {
@@ -8287,18 +8408,18 @@ assemble_film( double time,	/* present time value */
 
    sigma = mp->surface_tension;
 
-    
+
   velocity_function_model(veloU, veloL, time, dt);
 
   EvapRate = film_evaporation_model(C, &dEvapRate_dC, H, &dEvapRate_dH);
- 
+
 
    if (pd->TimeIntegration != STEADY) {
     H_dot = fv_dot->sh_fh;
   } else {
     H_dot = 0.0;
   }
-  
+
 
 /* Calculate lubrication pressure and thickness gradients */
 
@@ -8308,8 +8429,8 @@ assemble_film( double time,	/* present time value */
 
 /* Calculate flow rate and sensitivities */
 
-  calculate_lub_q_v (R_LUBP, time, dt, xi, exo );
-  
+  calculate_lub_q_v (R_SHELL_FILMP, time, dt, xi, exo );
+
 
 
   /*
@@ -8370,14 +8491,14 @@ assemble_film( double time,	/* present time value */
 	  source = 0.0;
 	  if (pd->e[eqn] & T_SOURCE)
 	    {
-	      source  = phi_i * EvapRate;     
+	      source  = phi_i * EvapRate;
 	      source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
 	    }
 
 /* Combine them all */
 
-	  lec->R[peqn][i] += mass + diffusion + source;  
-	  
+	  lec->R[peqn][i] += mass + diffusion + source;
+
 	} /* end of loop over i */
 
 
@@ -8390,7 +8511,7 @@ assemble_film( double time,	/* present time value */
 	{
 	  phi_i = bf[eqn]->phi[i];
 
-	  for (p = 0; p < dim; p++) 
+	  for (p = 0; p < dim; p++)
 	     {
 	      grad_phi_i[p] = bf[eqn]->grad_phi[i][p];
               grad_II_phi_i[p] = 0.0;
@@ -8404,9 +8525,9 @@ assemble_film( double time,	/* present time value */
 /* Assemble diffusion term */
 
 	  diffusion = 0.0;
-	  if (pd->e[eqn] & T_DIFFUSION) 
+	  if (pd->e[eqn] & T_DIFFUSION)
 	  {
-	    for (p = 0; p < dim; p++) 
+	    for (p = 0; p < dim; p++)
 	      {
 		diffusion += - sigma*grad_II_phi_i[p]*grad_II_H[p];
 	      }
@@ -8426,8 +8547,8 @@ assemble_film( double time,	/* present time value */
 
 /* Combine them all */
 
-	  lec->R[peqn][i] +=  diffusion + source;  
-	  
+	  lec->R[peqn][i] +=  diffusion + source;
+
 	} /* end of loop over i */
 
 
@@ -8476,7 +8597,7 @@ assemble_film( double time,	/* present time value */
 	      for ( j=0; j<ei->dof[var]; j++)
 		{
 	           phi_j = bf[var]->phi[j];
-                  
+
 		  for ( p=0; p<dim; p++)
 		    {
 		      grad_phi_j[p] = bf[var]->grad_phi[j][p];
@@ -8489,9 +8610,9 @@ assemble_film( double time,	/* present time value */
 		  diffusion = 0.0;
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
 			{
-                          diffusion += - LubAux->dq_dp1[ii][j] * grad_II_phi_i[ii] * grad_II_phi_j[ii]; 
+                          diffusion += - LubAux->dq_dp1[ii][j] * grad_II_phi_i[ii] * grad_II_phi_j[ii];
 			}
 
 		      diffusion *= det_J * wt;
@@ -8541,12 +8662,12 @@ assemble_film( double time,	/* present time value */
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
 
-		     for (ii = 0; ii < VIM; ii++) 
+		     for (ii = 0; ii < VIM; ii++)
 			{
 	                  diffusion += - LubAux->dq_dh1[ii][j] * grad_II_phi_j[ii] * grad_II_phi_i[ii];
 	                  diffusion += - LubAux->dq_dh2[ii][j] * phi_j * grad_II_phi_i[ii];
                         }
-		    
+
 		      diffusion *= det_J * wt;
 		      diffusion *= h3;
 		      diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
@@ -8585,11 +8706,11 @@ assemble_film( double time,	/* present time value */
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
 
-		     for (ii = 0; ii < VIM; ii++) 
+		     for (ii = 0; ii < VIM; ii++)
 			{
 	                  diffusion += - LubAux->dq_dc[ii][j] * phi_j * grad_II_phi_i[ii];
                         }
-		    
+
 		      diffusion *= det_J * wt;
 		      diffusion *= h3;
 		      diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
@@ -8605,11 +8726,11 @@ assemble_film( double time,	/* present time value */
                        source *= pd->etm[eqn][(LOG2_SOURCE)];
                     }
 
-		  lec->J[peqn][pvar][i][j] += diffusion + source;   
+		  lec->J[peqn][pvar][i][j] += diffusion + source;
 
 		}
 
-	    }	 
+	    }
 
 
 	  var = R_MESH1;
@@ -8664,7 +8785,7 @@ assemble_film( double time,	/* present time value */
 		  source = 0.0;
 		  if (pd->e[eqn] & T_SOURCE)
 		    {
-                      source += phi_i * phi_j; 
+                      source += phi_i * phi_j;
 		      source *= det_J * wt;
 		      source *= h3;
 		      source *= pd->etm[eqn][(LOG2_DIFFUSION)];
@@ -8700,7 +8821,7 @@ assemble_film( double time,	/* present time value */
 		  diffusion = 0.;
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
                         {
                              diffusion += - sigma * grad_II_phi_i[ii] * grad_II_phi_j[ii];
 			}
@@ -8715,9 +8836,9 @@ assemble_film( double time,	/* present time value */
 		}
 	    }
 
-	      
+
 	  /* SENSITIVITY W.R.T. PARTICLES CONCENTRATION */
-          /* To be pursued when coupling with surface tension is finished */	 
+          /* To be pursued when coupling with surface tension is finished */
 
 
 	  var = R_MESH1;
@@ -8764,7 +8885,7 @@ assemble_film( double time,	/* present time value */
  *	me -- pointer to Material Entity	structure
  *
  * out:
- *	a   -- gets loaded up with proper contribution 
+ *	a   -- gets loaded up with proper contribution
  *	lec -- gets loaded up with local contributions to resid, Jacobian
  * 	r   -- residual RHS vector
  *
@@ -8772,9 +8893,9 @@ assemble_film( double time,	/* present time value */
  *
  */
 /*ARGSUSED*/
-int 
-assemble_film_particles(  double time,	/* present time value */ 
-	                  double tt,	/* parameter to vary time integration from 
+int
+assemble_film_particles(  double time,	/* present time value */
+	                  double tt,	/* parameter to vary time integration from
 				           explicit (tt = 1) to implicit (tt = 0)    */
 	                  double dt,	/* current time step size */
                           double xi[DIM],  /* Local stu coordinates */
@@ -8782,17 +8903,18 @@ assemble_film_particles(  double time,	/* present time value */
                           const Exo_DB *exo  )
 
 {
-  int eqn; 
+  int eqn;
   int var, peqn, pvar, dim, p;
   int i = -1, ii;
   int j, status;
   int *n_dof = NULL;
   int dof_map[MDE];
+  int EQN;
 
   dbl grad_II_C[DIM];  /* Particles concentration gradient */
   dbl wt;
 
-  dbl H = 0, C, C_dot; 
+  dbl H = 0, C, C_dot;
   dbl H_U, dH_U_dtime, H_L, dH_L_dtime, dH_U_dp, dH_U_ddh;
   dbl dH_U_dX[DIM],dH_L_dX[DIM];
   dbl q_old[DIM], q[DIM], v[DIM];
@@ -8824,7 +8946,7 @@ assemble_film_particles(  double time,	/* present time value */
   dbl supg = 0.;
 
   /*
-   * Galerkin weighting functions for i-th shell residuals 
+   * Galerkin weighting functions for i-th shell residuals
    * and some of their derivatives...
    */
   dbl phi_i;
@@ -8867,12 +8989,16 @@ assemble_film_particles(  double time,	/* present time value */
   /* Unpack variables from structures for local convenience... */
   dim = pd->Num_Dim;
 
+
+  /* Use SHELL_FILMP for default advection velocity field */
+  EQN = R_SHELL_FILMP;
   if ( pd->v[SHELL_FILMH] )
-    { 
+    {
      H = fv->sh_fh;  /* Film thickness */
     }
   else if ( pd->v[LUBP] )
     {
+     EQN = R_LUBP;
      H = height_function_model(&H_U, &dH_U_dtime, &H_L, &dH_L_dtime, dH_U_dX, dH_L_dX, 
                                &dH_U_dp, &dH_U_ddh, time, dt);
     }
@@ -8885,7 +9011,7 @@ assemble_film_particles(  double time,	/* present time value */
 
   wt = fv->wt;       /* Gauss weight */
   h3 = fv->h3;	     /* Differential volume element, = 1 when CARTESIAN. */
-  
+
 
   shell_determinant_and_normal(ei->ielem, ei->iconnect_ptr, ei->num_local_nodes, 
 			       ei->ielem_dim, 1);
@@ -8903,11 +9029,11 @@ assemble_film_particles(  double time,	/* present time value */
    dmu_dc = mp->d_viscosity[SHELL_PARTC];
    ddiff_dc = ddiff_dmu * dmu_dc;
 
-    
+
   velocity_function_model(veloU, veloL, time, dt);
-  
+
   if ( pd->v[SHELL_FILMH] )
-    { 
+    {
      EvapRate = film_evaporation_model(C, &dEvapRate_dC, H, &dEvapRate_dH);
     }
   else
@@ -8922,7 +9048,7 @@ assemble_film_particles(  double time,	/* present time value */
   } else {
     C_dot = 0.0;
   }
-  
+
 
 /* Calculate particles concentration  gradients */
 
@@ -8931,8 +9057,8 @@ assemble_film_particles(  double time,	/* present time value */
 
 /* Calculate flow rate and sensitivities */
 
-   calculate_lub_q_v (R_LUBP, time, dt, xi, exo );
-   calculate_lub_q_v_old ( tran->time_value_old, tran->delta_t_old, xi, exo );
+   calculate_lub_q_v (EQN, time, dt, xi, exo );
+   calculate_lub_q_v_old (EQN, tran->time_value_old, tran->delta_t_old, xi, exo );
 
    for (p=0; p<dim; p++)
       {
@@ -8975,7 +9101,7 @@ assemble_film_particles(  double time,	/* present time value */
         }
 
      }
-  
+
 
   /*
    * Residuals_________________________________________________________________
@@ -8993,7 +9119,7 @@ assemble_film_particles(  double time,	/* present time value */
       for ( i=0; i<ei->dof[eqn]; i++)
 	{
 	  phi_i = bf[eqn]->phi[i];
-	  for (p = 0; p < dim; p++) 
+	  for (p = 0; p < dim; p++)
 	     {
 	      grad_phi_i[p] = bf[eqn]->grad_phi[i][p];
               grad_II_phi_i[p] = 0.0;
@@ -9033,9 +9159,9 @@ assemble_film_particles(  double time,	/* present time value */
             }
 
 	  advection = 0.0;
-	  if (pd->e[eqn] & T_ADVECTION) 
+	  if (pd->e[eqn] & T_ADVECTION)
 	  {
-	    for (p = 0; p < dim; p++) 
+	    for (p = 0; p < dim; p++)
 	      {
 		advection +=  wt_func * LubAux->q[p] * grad_II_C[p];
 	      }
@@ -9043,9 +9169,9 @@ assemble_film_particles(  double time,	/* present time value */
 #endif
 
 	  advection = 0.0;
-	  if (pd->e[eqn] & T_ADVECTION) 
+	  if (pd->e[eqn] & T_ADVECTION)
 	  {
-	    for (p = 0; p < dim; p++) 
+	    for (p = 0; p < dim; p++)
 	      {
 		advection +=   (1.5 * q[p] - 0.5 * q_old[p]) * grad_II_C[p] * wt_func
 	                     + q[p] * grad_II_C[p] * v[p] * grad_II_phi_i[p] * 0.5 * dt;
@@ -9057,9 +9183,9 @@ assemble_film_particles(  double time,	/* present time value */
 /* Assemble diffusion term */
 
 	  diffusion = 0.0;
-	  if (pd->e[eqn] & T_DIFFUSION) 
+	  if (pd->e[eqn] & T_DIFFUSION)
 	  {
-	    for (p = 0; p < dim; p++) 
+	    for (p = 0; p < dim; p++)
 	      {
                 diffusion +=   diff_coeff * H * grad_II_C[p] * grad_II_phi_i[p];
 	      }
@@ -9070,7 +9196,7 @@ assemble_film_particles(  double time,	/* present time value */
 /* Assemble source term */
 
 	  source = 0.0;
-	  if (pd->e[eqn] & T_SOURCE) 
+	  if (pd->e[eqn] & T_SOURCE)
 	  {
             source +=  - phi_i * C * EvapRate;
 	    source *=    det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
@@ -9079,8 +9205,8 @@ assemble_film_particles(  double time,	/* present time value */
 
 /* Combine them all */
 
-	  lec->R[peqn][i] += mass + advection + diffusion + source;  
-	  
+	  lec->R[peqn][i] += mass + advection + diffusion + source;
+
 	} /* end of loop over i */
 
     } /* End of assembly residuals */
@@ -9139,7 +9265,7 @@ assemble_film_particles(  double time,	/* present time value */
 	      for ( j=0; j<ei->dof[var]; j++)
 		{
 	           phi_j = bf[var]->phi[j];
-                  
+
 		  for ( p=0; p<dim; p++)
 		    {
 		      grad_phi_j[p] = bf[var]->grad_phi[j][p];
@@ -9153,14 +9279,14 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_ADVECTION)
 		    {
 
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
 			{
                           advection +=  1.5 * dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii]* wt_func
                                       + 1.5 * dq_dp2[ii][j] * phi_j * grad_II_C[ii]* wt_func
                                       + dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt
                                       + dq_dp2[ii][j] * phi_j * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt
                                       + q[ii] * grad_II_C[ii] * dv_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_phi_i[ii] * 0.5 * dt
-                                      + q[ii] * grad_II_C[ii] * dv_dp2[ii][j] * phi_j * grad_II_phi_i[ii] * 0.5 * dt; 
+                                      + q[ii] * grad_II_C[ii] * dv_dp2[ii][j] * phi_j * grad_II_phi_i[ii] * 0.5 * dt;
 			}
 
 		      advection *= det_J * wt;
@@ -9183,7 +9309,7 @@ assemble_film_particles(  double time,	/* present time value */
 	      for ( j=0; j<ei->dof[var]; j++)
 		{
 	           phi_j = bf[var]->phi[j];
-                  
+
 		  for ( p=0; p<dim; p++)
 		    {
 		      grad_phi_j[p] = bf[var]->grad_phi[j][p];
@@ -9197,9 +9323,9 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_ADVECTION)
 		    {
 
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
 			{
-                          advection += LubAux->dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * wt_func; 
+                          advection += LubAux->dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * wt_func;
 			}
 
                       if (supg != 0.)
@@ -9208,11 +9334,11 @@ assemble_film_particles(  double time,	/* present time value */
                             {
                              for (p = 0; p < VIM; p++)
                                 {
-                                 advection += LubAux->q[ii] * grad_II_C[ii] * 
+                                 advection += LubAux->q[ii] * grad_II_C[ii] *
                                               (supg * h_elem_inv * LubAux->dv_avg_dp1[p][j] * grad_II_phi_j[p] * grad_II_phi_i[p]);
                                 }
-                            }                   
-                        } 
+                            }
+                        }
 
 		      advection *= det_J * wt;
 		      advection *= h3;
@@ -9222,11 +9348,11 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_ADVECTION)
 		    {
 
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
 			{
                           advection +=  1.5 * dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii]* wt_func
                                       + dq_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt
-                                      + q[ii] * grad_II_C[ii] * dv_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_phi_i[ii] * 0.5 * dt; 
+                                      + q[ii] * grad_II_C[ii] * dv_dp1[ii][j] * grad_II_phi_j[ii] * grad_II_phi_i[ii] * 0.5 * dt;
 			}
 
 		      advection *= det_J * wt;
@@ -9289,14 +9415,14 @@ assemble_film_particles(  double time,	/* present time value */
                             {
                              for (p = 0; p < VIM; p++)
                                 {
-                                 advection += LubAux->q[ii] * grad_II_C[ii] * 
-                                              (supg * h_elem_inv * 
+                                 advection += LubAux->q[ii] * grad_II_C[ii] *
+                                              (supg * h_elem_inv *
                                                (  LubAux->dv_avg_dh1[p][j] * grad_II_phi_j[p] * grad_II_phi_i[p]
                                                 + LubAux->dv_avg_dh2[p][j] * phi_j * grad_II_phi_i[p] ) );
                                 }
-                            }                   
-                        } 
-		    
+                            }
+                        }
+
 		      advection *= det_J * wt;
 		      advection *= h3;
 		      advection *= pd->etm[eqn][(LOG2_ADVECTION)];
@@ -9306,11 +9432,11 @@ assemble_film_particles(  double time,	/* present time value */
 
 		  if (pd->e[eqn] & T_ADVECTION)
 		    {
-		      for (ii = 0; ii < VIM; ii++) 
+		      for (ii = 0; ii < VIM; ii++)
 			{
                           advection +=  1.5 * dq_dh1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * wt_func
                                       + 1.5 * dq_dh2[ii][j] * phi_j * grad_II_C[ii] * wt_func
-                                      + dq_dh1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt 
+                                      + dq_dh1[ii][j] * grad_II_phi_j[ii] * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt
                                       + dq_dh2[ii][j] * phi_j * grad_II_C[ii] * v[ii] * grad_II_phi_i[ii] * 0.5 * dt
                                       + q[ii] * grad_II_C[ii] * dv_dh1[ii][j] * grad_II_phi_j[ii] * grad_II_phi_i[ii] * 0.5 * dt
                                       + q[ii] * grad_II_C[ii] * dv_dh2[ii][j] * phi_j * grad_II_phi_i[ii] * 0.5 * dt;
@@ -9319,18 +9445,18 @@ assemble_film_particles(  double time,	/* present time value */
 		      advection *= det_J * wt;
 		      advection *= h3;
 		      advection *= pd->etm[eqn][(LOG2_ADVECTION)];
-                    } 
+                    }
 
 
 		  diffusion = 0.;
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
 
-		     for (ii = 0; ii < VIM; ii++) 
+		     for (ii = 0; ii < VIM; ii++)
 			{
                           diffusion +=   grad_II_phi_i[ii] * phi_j * diff_coeff * grad_II_C[ii];
                         }
-		    
+
 		      diffusion *= det_J * wt;
 		      diffusion *= h3;
 		      diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
@@ -9341,7 +9467,7 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_SOURCE)
 		    {
                       source += - C * dEvapRate_dH * phi_j * phi_i;
-		    
+
 		      source *= det_J * wt;
 		      source *= h3;
 		      source *= pd->etm[eqn][(LOG2_SOURCE)];
@@ -9352,9 +9478,9 @@ assemble_film_particles(  double time,	/* present time value */
 		}
 	    }
 
-	      
+
 	  /* SENSITIVITY W.R.T. PARTICLES CONCENTRATION */
-	 
+
 
 	  var = SHELL_PARTC;
 
@@ -9391,13 +9517,13 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_ADVECTION)
 		    {
 #if 0
-		     for (ii = 0; ii < VIM; ii++) 
+		     for (ii = 0; ii < VIM; ii++)
 			{
 	                  advection += grad_II_phi_j[ii] * LubAux->q[ii] * wt_func;
                           advection += grad_II_C[ii] * LubAux->dq_dc[ii][j] * phi_j * wt_func;
                         }
-#endif		    
-		     for (ii = 0; ii < VIM; ii++) 
+#endif
+		     for (ii = 0; ii < VIM; ii++)
 			{
 	                  advection +=  1.5 * dq_dc[ii][j] * grad_II_C[ii] * wt_func
                                       + (1.5 * q[ii] - 0.5 * q_old[ii]) * grad_II_phi_j[ii] * wt_func
@@ -9416,12 +9542,12 @@ assemble_film_particles(  double time,	/* present time value */
 		  if (pd->e[eqn] & T_DIFFUSION)
 		    {
 
-		     for (ii = 0; ii < VIM; ii++) 
+		     for (ii = 0; ii < VIM; ii++)
 			{
-                          diffusion +=  grad_II_phi_i[ii] * H * ddiff_dc * phi_j * grad_II_C[ii]; 
+                          diffusion +=  grad_II_phi_i[ii] * H * ddiff_dc * phi_j * grad_II_C[ii];
                           diffusion +=  grad_II_phi_i[ii] * H * diff_coeff * grad_II_phi_j[ii];
                         }
-		    
+
 		      diffusion *= det_J * wt;
 		      diffusion *= h3;
 		      diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
@@ -9433,7 +9559,7 @@ assemble_film_particles(  double time,	/* present time value */
 		    {
 	              source += - phi_j * EvapRate * phi_i;
                       source += - C * dEvapRate_dC * phi_j * phi_i;
-		    
+
 		      source *= det_J * wt;
 		      source *= h3;
 		      source *= pd->etm[eqn][(LOG2_SOURCE)];
@@ -9454,13 +9580,13 @@ assemble_film_particles(  double time,	/* present time value */
             {
 
               /*** Loop over dimensions of velocity ***/
-              for ( b = 0; b < dim; b++) 
+              for ( b = 0; b < dim; b++)
                  {
                   var = VELOCITY1 + b;
                   pvar = upd->vp[var];
 
                   /*** Loop over DOFs (j) ***/
-                  for ( j=0; j < ei->dof[var]; j++) 
+                  for ( j=0; j < ei->dof[var]; j++)
                      {
                       phi_j = bf[var]->phi[j];
 
@@ -9473,7 +9599,7 @@ assemble_film_particles(  double time,	/* present time value */
                            {
                             h_elem_deriv = vcent[b] * pg_data->dv_dnode[b][j] * h_elem_inv/ (4. * hsquared[b]);
                            }
-                         if (h_elem != 0.) 
+                         if (h_elem != 0.)
                            {
                             h_elem_inv_deriv = -h_elem_deriv/(h_elem * h_elem);
                            }
@@ -9499,7 +9625,7 @@ assemble_film_particles(  double time,	/* present time value */
                          advection *= pd->etm[eqn][(LOG2_ADVECTION)];
 
                         }
-                      lec->J[peqn][pvar][i][j] += advection;            
+                      lec->J[peqn][pvar][i][j] += advection;
                      }
                  }
             }
@@ -10670,6 +10796,7 @@ assemble_porous_shell_open(
   // Load porous medium parameters
   dbl phi = mp->porosity;                         // Porosity
   dbl H =  porous_shell_closed_height_model();    // Pore height (vertical)
+  dbl kappa = porous_shell_cross_perm_model();    // Pores cross permeability
 
   // Load field variables - PRS NOTE: NEED cross BC for integrating the two (set-up-shop)
   //  dbl P = fv->sh_p_open;                          // Porous pressure
@@ -10692,30 +10819,6 @@ assemble_porous_shell_open(
   S = mp->saturation;
   dSdP = mp->d_saturation[SHELL_PRESS_OPEN];
 
-  // Load permeability tensor
-  dbl kappa = 0.0;
-
-  // May want to add this as a kappa model. 
-  // for ( i = 0; i < DIM; i++) kappa -= fv->snormal[i]*mp->perm_tensor[2][i];
-
-  if (mp->PorousShellCrossKappaModel == CONSTANT)
-    {
-      kappa                 = mp->PorousShellCrossKappa;
-    }
-  else if (mp->PorousShellCrossKappaModel == EXTERNAL_FIELD)
-    {
-      EH(mp->Xperm_external_field_index, "Cross Permeability external field not found!");
-      kappa = mp->PorousShellCrossKappa = 
-	mp->u_PorousShellCrossKappa_function_constants[0]*fv->external_field[mp->Xperm_external_field_index];
-      if (pd->TimeIntegration == TRANSIENT)
-	{
-	  mp_old->PorousShellCrossKappa =mp->u_PorousShellCrossKappa_function_constants[0]*fv->external_field[mp->Xperm_external_field_index];
-	}
-    }
-  else
-    {
-      EH(-1,"Unrecognized Cross Kappa model");
-    }
 
   // Load heaviside for level set weighting
   dbl Hside = 1.0, d_Hside_dF[DIM] = {0.0};
@@ -10734,39 +10837,65 @@ assemble_porous_shell_open(
     }
   }
 
-  dbl E_MASS[MDE], E_MASS_P[MDE];
-  dbl Pnode, dSdPnode, dSdP_Pnode;
+  dbl E_MASS[MDE] = {0.0}, E_MASS_P[MDE] = {0.0};
+
+  for ( i = 0; i < ei->dof[eqn]; i++) {
+    E_MASS[i]    = pmv_ml->Inventory_Solvent_dot[i][0];
+    E_MASS_P[i]  = pmv_ml->d_Inventory_Solvent_dot_dpmv[i][0][0];
+  }
+
+  // We are now outside of mass lumping zone. Everything is evaluated at Gauss point from now on
+
+  // Evaluate capillary pressure and load saturation
   dbl d_cap_pres[2], cap_pres;
   d_cap_pres[0] = d_cap_pres[1] = 0.;
   dbl Patm = mp->PorousShellPatm;
 
-  for ( i = 0; i < ei->dof[eqn]; i++) {
-    Pnode = *esp->sh_p_open[i];
-    cap_pres = Patm - Pnode;
-    //Snode = shell_saturation_pressure_curve(Pnode, &dSdPnode, &dSdP_Pnode);
-   
-    /* CHECK FOR REMOVAL */
-    load_saturation(phi, cap_pres, d_cap_pres);
-    dSdPnode = mp->d_saturation[SHELL_PRESS_OPEN];
-    dSdP_Pnode = mp->d_d_saturation[SHELL_PRESS_OPEN][SHELL_PRESS_OPEN];
+  cap_pres = Patm - fv->sh_p_open;
+  load_saturation(phi, cap_pres, d_cap_pres);
 
-    E_MASS[i]    = H * phi * dSdPnode   * *esp_dot->sh_p_open[i];
-    E_MASS_P[i]  = H * phi * dSdPnode   * (1.0+2.0*tt)/dt;
-    E_MASS_P[i] += H * phi * dSdP_Pnode * *esp_dot->sh_p_open[i];
-  }
+  // Load relative permeability as a function of saturation
+  if (mp->RelLiqPermModel != CONSTANT &&
+      mp->RelLiqPermModel != VAN_GENUCHTEN &&
+      mp->RelLiqPermModel != VAN_GENUCHTEN_EXTERNAL &&
+      mp->RelLiqPermModel != EXTERNAL_FIELD )
+    {
+      EH(-1,"Only CONSTANT, VAN_GENUCHTEN, VAN_GENUCHTEN_EXTERNAL, and EXTERNAL_FIELD  models are allowed for Rel Liq Permeability model in Open Pore Shell equation ");
+    }
+  if (mp->RelLiqPermModel != CONSTANT)
+    {
+     load_liq_perm(phi, cap_pres, mp->saturation, d_cap_pres);
+    }
+  dbl rel_liq_perm = mp->rel_liq_perm;
+
 
   // Calculate DIFFUSION terms
   dbl E_DIFF[DIM] = {0.0};
   dbl E_DIFF_P[DIM][DIM] = {{0.0}};
-  for ( a = 0; a < DIM; a++) {
-    for ( b = 0; b < DIM; b++) {
-      E_DIFF[a]      += -H / mu * mp->perm_tensor[a][b] * fv->grad_sh_p_open[b];
-      E_DIFF_P[a][b] += -H / mu * mp->perm_tensor[a][b];
+  dbl E_DIFF_P2[DIM][DIM] = {{0.0}};
+
+  if (mp->PermeabilityModel != CONSTANT) {
+    for ( a = 0; a < DIM; a++) {
+       for ( b = 0; b < DIM; b++) {
+          E_DIFF[a]      += -H * mp->perm_tensor[a][b] * rel_liq_perm * (gradIIp[b] - mp->momentum_source[b]) ;
+          E_DIFF_P[a][b] += -H * mp->perm_tensor[a][b] * rel_liq_perm;
+          E_DIFF_P2[a][b] += -H  * mp->perm_tensor[a][b] * mp->d_rel_liq_perm[SHELL_PRESS_OPEN] *
+                             (gradIIp[b] - mp->momentum_source[b]);
+       }
+    }
+  } else {
+    for ( a = 0; a < DIM; a++) {
+       E_DIFF[a]      += -H * mp->permeability * rel_liq_perm * (gradIIp[a] - mp->momentum_source[a]) ;
+       for ( b = 0; b < DIM; b++) {
+          E_DIFF_P[a][b] += -H * mp->permeability * delta(a,b) * rel_liq_perm;
+          E_DIFF_P2[a][b] += -H * mp->permeability * delta(a,b) * mp->d_rel_liq_perm[SHELL_PRESS_OPEN] *
+                             (gradIIp[b] - mp->momentum_source[b]);
+       }
     }
   }
 
   // Calculate SOURCE term
-  dbl E_SOUR, E_SOUR_P, E_SOUR_PLUB;
+  dbl E_SOUR = 0.0, E_SOUR_P = 0.0, E_SOUR_PLUB = 0.0;
   dbl E_SOUR_F[MDE] = {0.0};
   dbl E_SOUR_2, E_SOUR_P_2, E_SOUR_2_PLUB_2;
   dbl E_SOUR_2_PF[MDE] = {0.0};
@@ -10776,16 +10905,18 @@ assemble_porous_shell_open(
                                       // criteria.  This should not be const.  We have tofigure this out.
   Peff  = fv->lubp*Hside + Pmin*(1-Hside);
 
-  E_SOUR      = kappa / mu * (fv->sh_p_open - Peff) / (2*S*H);
-  E_SOUR_P    = kappa / mu / (2*S*H);
-  E_SOUR_P   -= kappa / mu * (fv->sh_p_open - Peff) / (2*pow(S,2)*H) * dSdP;
-  E_SOUR_PLUB =-kappa / mu / (2*S*H) * Hside;
-  if ( pd->e[R_FILL] ) {
-    for ( i = 0; i < ei->dof[FILL]; i++) {
-      E_SOUR_F[i] = kappa / mu * (-1) / (2*S*H) * (fv->lubp - Pmin) * d_Hside_dF[i];
+ if (pd->e[R_LUBP])
+   {
+    E_SOUR      = kappa / mu * (fv->sh_p_open - Peff) / (2*S*H);
+    E_SOUR_P    = kappa / mu / (2*S*H);
+    E_SOUR_P   -= kappa / mu * (fv->sh_p_open - Peff) / (2*pow(S,2)*H) * dSdP;
+    E_SOUR_PLUB =-kappa / mu / (2*S*H) * Hside;
+    if ( pd->e[R_FILL] ) {
+       for ( i = 0; i < ei->dof[FILL]; i++) {
+          E_SOUR_F[i] = kappa / mu * (-1) / (2*S*H) * (fv->lubp - Pmin) * d_Hside_dF[i];
+       }
     }
-  }
-
+   }
   // HACK to keep liquid from being sucked back to the lubrication layer
   if ( E_SOUR > 0.0 ) {
     // E_SOUR = 0.0;
@@ -10794,8 +10925,8 @@ assemble_porous_shell_open(
     // for ( i = 0; i < ei->dof[FILL]; i++) E_SOUR_F[i] = 0.0;
   }
 
-  // OK, if we have multilayer, we need to get source terms from the second-story lubrication field, whose 
-  // footprint is dictated by a phase field.   We could use setup_shop but the element friend thing is not 
+  // OK, if we have multilayer, we need to get source terms from the second-story lubrication field, whose
+  // footprint is dictated by a phase field.   We could use setup_shop but the element friend thing is not
   // function with this really pathological shell-on-shell stack.   So we will have to do things by hand.
 
   dbl Hside_2 = 1.0, d_Hside_2_dpF[DIM] = {0.0}; dbl lubp_2 = 0.0; dbl pF=0.0;
@@ -10804,7 +10935,7 @@ assemble_porous_shell_open(
     {
       //Compute Heaviside function for phase field
       ls_old = ls;
-      if(pfd != NULL) ls = pfd->ls[0]; 
+      if(pfd != NULL) ls = pfd->ls[0];
       if ( upd->vp[PHASE1] >= 0) {
 	load_lsi_shell_second( ls->Length_Scale );
 	Hside_2 = 1 - lsi->Hn;
@@ -10817,7 +10948,7 @@ assemble_porous_shell_open(
 	{
 	  lubp_2 +=    *esp->lubp_2[i] * bf[R_LUBP_2]->phi[i];
 	  pF +=    *esp->pF[0][i] * bf[R_PHASE1]->phi[i];
-	} 
+	}
 
 
       Peff2=  lubp_2*Hside_2 + Pmin*(1-Hside_2);
@@ -10831,13 +10962,38 @@ assemble_porous_shell_open(
 	  }
 	}
 
-      //Now convert back to level set field   
+      //Now convert back to level set field
       ls = ls_old;
       if ( upd->vp[FILL] >= 0) {
 	load_lsi( ls->Length_Scale );
       }
 
     }
+
+  // Load sink terms due to adsorption and its sensitivities
+  dbl E_SINK = 0.0, E_SINK_P[MDE], E_SINK_SINK[MDE];
+  dbl d_MassSource[MAX_VARIABLE_TYPES + MAX_CONC][MDE];
+  memset(E_SINK_P,  0.0, sizeof(double) * MDE);
+  memset(E_SINK_SINK,  0.0, sizeof(double) * MDE);
+  memset(d_MassSource,  0.0, sizeof(double) * (MAX_VARIABLE_TYPES + MAX_CONC) * MDE);
+
+  if (pd->e[R_POR_SINK_MASS])
+    {
+     E_SINK = por_mass_source_model(d_MassSource);
+
+     /* Load sensitivities w.r.t. shell porous open */
+     for (j = 0; j < ei->dof[SHELL_PRESS_OPEN]; j++)
+        {
+         E_SINK_P[j] = d_MassSource[SHELL_PRESS_OPEN][j];
+        }
+
+     /* Load sensitivities w.r.t. pore sink mass */
+     for (j = 0; j < ei->dof[POR_SINK_MASS]; j++)
+        {
+         E_SINK_SINK[j] = d_MassSource[POR_SINK_MASS][j];
+        }
+    }
+
 
   // Assemble test for LS weight
   int mytest[MDE];
@@ -10868,20 +11024,20 @@ assemble_porous_shell_open(
   eqn = R_SHELL_SAT_OPEN;
   if (af->Assemble_Residual) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
-    for ( i = 0; i < ei->dof[eqn]; i++) {         
-      
+    for ( i = 0; i < ei->dof[eqn]; i++) {
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble mass term
       mass = 0.0;
       if ( T_MASS ) {
 	mass += E_MASS[i] * phi_i;
       }
       mass *= dA * etm_mass;
-      
+
       // Assemble diffusion term
       diff = 0.0;
       if ( T_DIFFUSION ) {
@@ -10890,17 +11046,18 @@ assemble_porous_shell_open(
 	}
       }
       diff *= dA * etm_diff;
-      
+
       // Assemble source term
       sour = 0.0;
       if ( T_SOURCE ) {
 	sour += (E_SOUR*mytest[i] + E_SOUR_2*mytest_2[i]) * phi_i;
+        sour -= E_SINK * phi_i;
       }
       sour *= dA * etm_sour;
 
       // Assemble full residual
       lec->R[peqn][i] += mass + diff + sour;
-      
+
     }  // End of loop over DOF (i)
 
   } // End of residual assembly of R_SHELL_SAT_OPEN
@@ -10909,13 +11066,13 @@ assemble_porous_shell_open(
   eqn = R_LUBP;
   if (af->Assemble_Residual & pd->e[eqn]) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
-    for ( i = 0; i < ei->dof[eqn]; i++) {         
-      
+    for ( i = 0; i < ei->dof[eqn]; i++) {
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-            
+
       // Assemble source term
       sour = 0.0;
       if ( T_SOURCE ) {
@@ -10925,7 +11082,7 @@ assemble_porous_shell_open(
 
       // Assemble full residual
       lec->R[peqn][i] += sour;
-      
+
     }  // End of loop over DOF (i)
 
   } // End of residual assembly of R_LUBP
@@ -10934,13 +11091,13 @@ assemble_porous_shell_open(
   eqn = R_LUBP_2;
   if ((af->Assemble_Residual & upd->ep[eqn]) >= 0) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
-    for ( i = 0; i < ei->dof[eqn]; i++) {         
-      
+    for ( i = 0; i < ei->dof[eqn]; i++) {
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-            
+
       // Assemble source term
       sour = 0.0;
       if ( T_SOURCE ) {
@@ -10950,7 +11107,7 @@ assemble_porous_shell_open(
 
       // Assemble full residual
       lec->R[peqn][i] += sour;
-      
+
     }  // End of loop over DOF (i)
 
   } // End of residual assembly of R_LUBP_2
@@ -10960,13 +11117,13 @@ assemble_porous_shell_open(
   eqn = R_SHELL_SAT_OPEN;
   if (af->Assemble_Jacobian) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
     for ( i = 0; i < ei->dof[eqn]; i++) {
-      
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble sensitivities for SHELL_PRESS_OPEN
       var = SHELL_PRESS_OPEN;
       if (pd->v[var]) {
@@ -10977,7 +11134,7 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
 	  // Assemble mass term
 	  mass = 0.0;
 	  if ( T_MASS ) {
@@ -10985,32 +11142,55 @@ assemble_porous_shell_open(
 	    if ( i == j ) mass += E_MASS_P[i] * phi_i;
 	  }
 	  mass *= dA * etm_mass;
-	  
+
 	  // Assemble diffusion term
 	  diff = 0.0;
 	  if ( T_DIFFUSION ) {
 	    for ( a = 0; a < DIM; a++) {
 	      for ( b = 0; b < DIM; b++) {
 		diff -= E_DIFF_P[a][b] * gradII_phi_i[a] * gradII_phi_j[b];
+		diff -= E_DIFF_P2[a][b] * gradII_phi_i[a] * phi_j;
 	      }
 	    }
 	  }
 	  diff *= dA * etm_diff;
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += (E_SOUR_P*mytest[i] + E_SOUR_P_2*mytest_2[i]) * phi_i * phi_j;
+            sour -= E_SINK_P[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour;
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += mass + diff + sour;
-	  
 	} // End of loop over DOF (j)
-	
+
       } // End of SHELL_PRESS_OPEN sensitivities
-      
+
+      // Assemble sensitivities for POR_SINK_MASS
+      var = POR_SINK_MASS;
+      if (pd->v[var]) {
+  	pvar = upd->vp[var];
+
+        // Loop over DOF (j)
+        for ( j = 0; j < ei->dof[var]; j++) {
+
+          // Assemble source term
+          sour = 0.0;
+          if ( T_SOURCE ) {
+            sour -= E_SINK_SINK[j] * phi_i;
+          }
+          sour *= dA * etm_sour;
+
+          // Assemble full Jacobian
+          lec->J[peqn][pvar][i][j] += sour;
+
+        } // End of loop over DOF (j)
+
+      } // End of POR_SINK_MASS sensitivities
+
       // Assemble sensitivities for LUBP
       var = LUBP;
       if (pd->v[var]) {
@@ -11021,19 +11201,19 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_PLUB * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP sensitivities
 
       // Assemble sensitivities for LUBP
@@ -11046,21 +11226,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_2_PLUB_2 * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest_2[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP sensitivities
-      
+
       // Assemble sensitivities for FILL
       var = FILL;
       if (pd->v[var]) {
@@ -11071,19 +11251,19 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_F[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of FILL sensitivities
 
  // Assemble sensitivities for PHASE1
@@ -11096,21 +11276,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_2_PF[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest_2[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of PHASE1 sensitivities
-                 
+
     } // End of loop over DOF (i)
 
   } // End of Jacobian assembly of R_SHELL_SAT_OPEN
@@ -11118,13 +11298,13 @@ assemble_porous_shell_open(
   eqn = R_LUBP;
   if (af->Assemble_Jacobian & pd->e[eqn]) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
     for ( i = 0; i < ei->dof[eqn]; i++) {
-      
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble sensitivities for SHELL_PRESS_OPEN
       var = SHELL_PRESS_OPEN;
       if (pd->v[var]) {
@@ -11135,21 +11315,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
- 	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_P * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of SHELL_PRESS_OPEN sensitivities
-      
+
       // Assemble sensitivities for LUBP
       var = LUBP;
       if (pd->v[var]) {
@@ -11160,21 +11340,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_PLUB * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP sensitivities
-      
+
       // Assemble sensitivities for FILL
       var = FILL;
       if (pd->v[var]) {
@@ -11185,21 +11365,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_F[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of FILL sensitivities
-                 
+
     } // End of loop over DOF (i)
 
   } // End of Jacobian assembly of R_LUBP
@@ -11207,13 +11387,13 @@ assemble_porous_shell_open(
   eqn = R_LUBP_2;
   if ((af->Assemble_Jacobian & upd->ep[eqn]) >= 0) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
     for ( i = 0; i < ei->dof[eqn]; i++) {
-      
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble sensitivities for SHELL_PRESS_OPEN
       var = SHELL_PRESS_OPEN;
       if (pd->v[var]) {
@@ -11224,21 +11404,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
- 	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_P_2 * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest_2[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of SHELL_PRESS_OPEN sensitivities
-      
+
       // Assemble sensitivities for LUBP
       var = LUBP_2;
       if (upd->vp[var] >=0) {
@@ -11249,21 +11429,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_2_PLUB_2 * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest_2[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP sensitivities
-      
+
       // Assemble sensitivities for FILL
       var = PHASE1;
       if (upd->vp[var] >= 0) {
@@ -11274,21 +11454,21 @@ assemble_porous_shell_open(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_2_PF[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest_2[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of FILL sensitivities
-                 
+
     } // End of loop over DOF (i)
 
   } // End of Jacobian assembly of R_LUBP_2
@@ -11312,22 +11492,22 @@ assemble_porous_shell_open(
  * Created:     Friday August 3, 2012 prschun
  *
  */
-/*ARGSUSED*/ 
+/*ARGSUSED*/
 int
 assemble_porous_shell_open_2(
 			   dbl tt,                     // Time integration form
 			   dbl dt,                     // Time step size
 			   dbl xi[DIM],                // Current coordinates
 			   const Exo_DB *exo           // ExoII handle
-			   ) 
+			   )
   /* PRS Note:  this open porous shell routine only interacts with R_LUBP_2 and
    * phase-fields.   That is, unlike its brother assemble_porous_shell_open, which interacts
-   * with R_LUBP and eventually R_LUBP_2 from the other side of the layered stack, this 
+   * with R_LUBP and eventually R_LUBP_2 from the other side of the layered stack, this
    * routine is for a shell that has no other lubrication layer above it, for now.  (8/16/2012)
    */
 {
 
-  /* --- Initialization -----------------------------------------------------*/    
+  /* --- Initialization -----------------------------------------------------*/
 
   // Variable definitions
   int eqn, peqn, var, pvar;                       // Equation / variables
@@ -11346,7 +11526,7 @@ assemble_porous_shell_open_2(
 
   if (!pd->e[eqn]) return(status);
 
-  // For that matter, also bail out if there is no R_LUBP_2 equation here, as then it is 
+  // For that matter, also bail out if there is no R_LUBP_2 equation here, as then it is
   // a moot point even being in here;
 
   if (!pd->e[R_LUBP_2]) return(status);
@@ -11373,6 +11553,8 @@ assemble_porous_shell_open_2(
   // Load porous medium parameters
   dbl phi = mp->porosity;                         // Porosity
   dbl H =  porous_shell_closed_height_model();    // Pore height (vertical)
+  dbl kappa = porous_shell_cross_perm_model();    // Pores cross permeability
+
 
   // Load field variables - PRS NOTE: NEED cross BC for integrating the two (set-up-shop)
 
@@ -11380,53 +11562,32 @@ assemble_porous_shell_open_2(
 
   /* Load up properties */
   mu = mp->viscosity;
-  /* OK this is a cludge for the second ply.  the viscosity function in the gap needs to be modulated,but here we just need 
+  /* OK this is a cludge for the second ply.  the viscosity function in the gap needs to be modulated,but here we just need
    * the liquid imbibing phase viscosity.  PRS (9/21/2012)
    */
   if (mp->ViscosityModel == CONST_PHASE_FUNCTION) mu = mp->u_viscosity[2];
-    
-  /* --- Calculate equation components ---------------------------------------*/    
+
+  /* --- Calculate equation components ---------------------------------------*/
 
 
-  if (mp->SaturationModel != SHELL_TANH && 
+  if (mp->SaturationModel != SHELL_TANH &&
       mp->SaturationModel != TANH &&
       mp->SaturationModel != TANH_EXTERNAL &&
-      mp->SaturationModel != TANH_HYST) 
+      mp->SaturationModel != TANH_HYST)
     {
       EH(-1,"Pacito problema: Only shell_tanh, tanh, tanh_external, and tanh_hyst model available for shell open pore. Not much work to remedy this, though");
-      // PRS: just need to expand the nodal call on the mass term 
+      // PRS: just need to expand the nodal call on the mass term
     }
 
   dbl S, dSdP;
   S = mp->saturation;
   dSdP = mp->d_saturation[SHELL_PRESS_OPEN_2];
 
-  // Load permeability tensor
-  dbl kappa = 0.0;
-
-  if (mp->PorousShellCrossKappaModel == CONSTANT)
-    {
-      kappa                 = mp->PorousShellCrossKappa;
-    }
-  else if (mp->PorousShellCrossKappaModel == EXTERNAL_FIELD)
-    {
-      EH(mp->Xperm_external_field_index, "Cross Permeability external field not found!");
-      kappa = mp->PorousShellCrossKappa = fv->external_field[mp->Xperm_external_field_index];
-      if (pd->TimeIntegration == TRANSIENT)
-	{
-	  mp_old->PorousShellCrossKappa = fv->external_field[mp->Xperm_external_field_index];
-	}
-    }
-  else
-    {
-      EH(-1,"Unrecognized Cross Kappa model");
-    }
-
   // Load heaviside for phase-field  weighting
   dbl Hside = 1.0, d_Hside_dF[DIM] = {0.0};
   if ( pd->v[PHASE1] ) {
     ls_old = ls;
-    if(pfd != NULL) ls = pfd->ls[0]; 
+    if(pfd != NULL) ls = pfd->ls[0];
     load_lsi( ls->Length_Scale );
     Hside = 1 - lsi->Hn;
     for ( i = 0; i < ei->dof[PHASE1]; i++) d_Hside_dF[i] = -lsi->d_Hn_dF[i];
@@ -11443,33 +11604,47 @@ assemble_porous_shell_open_2(
   }
 
   dbl E_MASS[MDE], E_MASS_P[MDE];
-  dbl Pnode, dSdPnode, dSdP_Pnode;
+
+  for ( i = 0; i < ei->dof[eqn]; i++) {
+    E_MASS[i]    = pmv_ml->Inventory_Solvent_dot[i][1];
+    E_MASS_P[i]  = pmv_ml->d_Inventory_Solvent_dot_dpmv[i][1][1];
+  }
+
+  // We are now outside of mass lumping zone. Everything is evaluated at Gauss point from now on
+
+  // Evaluate capillary pressure and load saturation
   dbl d_cap_pres[2], cap_pres;
   d_cap_pres[0] = d_cap_pres[1] = 0.;
   dbl Patm = mp->PorousShellPatm;
 
-  for ( i = 0; i < ei->dof[eqn]; i++) {
-    Pnode = *esp->sh_p_open_2[i];
-    cap_pres = Patm - Pnode;
-    //Snode = shell_saturation_pressure_curve(Pnode, &dSdPnode, &dSdP_Pnode);
-   
-    /* CHECK FOR REMOVAL */
-    load_saturation(phi, cap_pres, d_cap_pres);
-    dSdPnode = mp->d_saturation[SHELL_PRESS_OPEN_2];
-    dSdP_Pnode = mp->d_d_saturation[SHELL_PRESS_OPEN_2][SHELL_PRESS_OPEN_2];
+  cap_pres = Patm - fv->sh_p_open_2;
+  load_saturation(phi, cap_pres, d_cap_pres);
 
-    E_MASS[i]    = H * phi * dSdPnode   * *esp_dot->sh_p_open_2[i];
-    E_MASS_P[i]  = H * phi * dSdPnode   * (1.0+2.0*tt)/dt;
-    E_MASS_P[i] += H * phi * dSdP_Pnode * *esp_dot->sh_p_open_2[i];
-  }
+  // Load relative permeability as a function of saturation
+  if (mp->RelLiqPermModel != CONSTANT &&
+      mp->RelLiqPermModel != VAN_GENUCHTEN &&
+      mp->RelLiqPermModel != VAN_GENUCHTEN_EXTERNAL &&
+      mp->RelLiqPermModel != EXTERNAL_FIELD )
+    {
+      EH(-1,"Only CONSTANT, VAN_GENUCHTEN, VAN_GENUCHTEN_EXTERNAL, and EXTERNAL_FIELD  models are allowed for Rel Liq Permeability model in Open Pore Shell equation ");
+    }
+  if (mp->RelLiqPermModel != CONSTANT)
+    {
+     load_liq_perm(phi, cap_pres, mp->saturation, d_cap_pres);
+    }
+  dbl rel_liq_perm = mp->rel_liq_perm;
+
 
   // Calculate DIFFUSION terms
   dbl E_DIFF[DIM] = {0.0};
   dbl E_DIFF_P[DIM][DIM] = {{0.0}};
+  dbl E_DIFF_P2[DIM][DIM] = {{0.0}};
   for ( a = 0; a < DIM; a++) {
     for ( b = 0; b < DIM; b++) {
-      E_DIFF[a]      += -H / mu * mp->perm_tensor[a][b] * fv->grad_sh_p_open_2[b];
-      E_DIFF_P[a][b] += -H / mu * mp->perm_tensor[a][b];
+      E_DIFF[a]      += -H * mp->perm_tensor[a][b] * rel_liq_perm * (fv->grad_sh_p_open_2[b] - mp->momentum_source[b]);
+      E_DIFF_P[a][b] += -H * mp->perm_tensor[a][b] * rel_liq_perm;
+      E_DIFF_P2[a][b] += -H * mp->perm_tensor[a][b] * mp->d_rel_liq_perm[SHELL_PRESS_OPEN_2] *
+                         (fv->grad_sh_p_open_2[b] - mp->momentum_source[b]);
     }
   }
 
@@ -11517,20 +11692,20 @@ assemble_porous_shell_open_2(
   eqn = R_SHELL_SAT_OPEN_2;
   if (af->Assemble_Residual) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
-    for ( i = 0; i < ei->dof[eqn]; i++) {         
-      
+    for ( i = 0; i < ei->dof[eqn]; i++) {
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble mass term
       mass = 0.0;
       if ( T_MASS ) {
 	mass += E_MASS[i] * phi_i;
       }
       mass *= dA * etm_mass;
-      
+
       // Assemble diffusion term
       diff = 0.0;
       if ( T_DIFFUSION ) {
@@ -11539,7 +11714,7 @@ assemble_porous_shell_open_2(
 	}
       }
       diff *= dA * etm_diff;
-      
+
       // Assemble source term
       sour = 0.0;
       if ( T_SOURCE ) {
@@ -11549,7 +11724,7 @@ assemble_porous_shell_open_2(
 
       // Assemble full residual
       lec->R[peqn][i] += mass + diff + sour;
-      
+
     }  // End of loop over DOF (i)
 
   } // End of residual assembly of R_SHELL_SAT_OPEN
@@ -11558,13 +11733,13 @@ assemble_porous_shell_open_2(
   eqn = R_LUBP_2;
   if (af->Assemble_Residual & pd->e[eqn]) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
-    for ( i = 0; i < ei->dof[eqn]; i++) {         
-      
+    for ( i = 0; i < ei->dof[eqn]; i++) {
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-            
+
       // Assemble source term
       sour = 0.0;
       if ( T_SOURCE ) {
@@ -11574,7 +11749,7 @@ assemble_porous_shell_open_2(
 
       // Assemble full residual
       lec->R[peqn][i] += sour;
-      
+
     }  // End of loop over DOF (i)
 
   } // End of residual assembly of R_LUBP_2
@@ -11585,13 +11760,13 @@ assemble_porous_shell_open_2(
   eqn = R_SHELL_SAT_OPEN_2;
   if (af->Assemble_Jacobian) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
     for ( i = 0; i < ei->dof[eqn]; i++) {
-      
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble sensitivities for SHELL_PRESS_OPEN_2
       var = SHELL_PRESS_OPEN_2;
       if (pd->v[var]) {
@@ -11602,7 +11777,7 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
 	  // Assemble mass term
 	  mass = 0.0;
 	  if ( T_MASS ) {
@@ -11610,32 +11785,33 @@ assemble_porous_shell_open_2(
 	    if ( i == j ) mass += E_MASS_P[i] * phi_i;
 	  }
 	  mass *= dA * etm_mass;
-	  
+
 	  // Assemble diffusion term
 	  diff = 0.0;
 	  if ( T_DIFFUSION ) {
 	    for ( a = 0; a < DIM; a++) {
 	      for ( b = 0; b < DIM; b++) {
 		diff -= E_DIFF_P[a][b] * gradII_phi_i[a] * gradII_phi_j[b];
+                diff -= E_DIFF_P2[a][b] * gradII_phi_i[a] * phi_j;
 	      }
 	    }
 	  }
 	  diff *= dA * etm_diff;
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_P * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += mass + diff + sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of SHELL_PRESS_OPEN_2 sensitivities
-      
+
       // Assemble sensitivities for LUBP_2
       var = LUBP_2;
       if (pd->v[var]) {
@@ -11646,21 +11822,21 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_PLUB * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP_2 sensitivities
-      
+
       // Assemble sensitivities for PHASE1
       var = PHASE1;
       if (pd->v[var]) {
@@ -11671,21 +11847,21 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_F[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of phase1 sensitivities
-                 
+
     } // End of loop over DOF (i)
 
   } // End of Jacobian assembly of R_SHELL_SAT_OPEN_2
@@ -11693,13 +11869,13 @@ assemble_porous_shell_open_2(
   eqn = R_LUBP_2;
   if (af->Assemble_Jacobian & pd->e[eqn]) {
     peqn = upd->ep[eqn];
-    
+
     // Loop over DOF (i)
     for ( i = 0; i < ei->dof[eqn]; i++) {
-      
+
       // Load basis functions
       ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-      
+
       // Assemble sensitivities for SHELL_PRESS_OPEN
       var = SHELL_PRESS_OPEN_2;
       if (pd->v[var]) {
@@ -11710,21 +11886,21 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
- 	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_P * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of SHELL_PRESS_OPEN sensitivities
-      
+
       // Assemble sensitivities for LUBP_2
       var = LUBP_2;
       if (pd->v[var]) {
@@ -11735,21 +11911,21 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_PLUB * phi_i * phi_j;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of LUBP sensitivities
-      
+
       // Assemble sensitivities for PHASE1
       var = PHASE1;
       if (pd->v[var]) {
@@ -11760,21 +11936,21 @@ assemble_porous_shell_open_2(
 
 	  // Load basis functions
 	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
-	  
+
 	  // Assemble source term
 	  sour = 0.0;
-	  if ( T_SOURCE ) {   
+	  if ( T_SOURCE ) {
 	    sour += E_SOUR_F[j] * phi_i;
 	  }
 	  sour *= dA * etm_sour * mytest[i];
-	  
+
 	  // Assemble full Jacobian
 	  lec->J[peqn][pvar][i][j] += sour;
-	  
+
 	} // End of loop over DOF (j)
-	
+
       } // End of PHASE1 sensitivities
-                 
+
     } // End of loop over DOF (i)
 
   } // End of Jacobian assembly of R_LUBP
@@ -11788,6 +11964,9 @@ assemble_porous_shell_open_2(
 
 
 /* End of file mm_fill_shell.c */
+
+/*****************************************************************************/
+/*****************************************************************************/
 
   /*
     shell_lubr_solid_struct_bc(): Balance of Shell-lubrication forces with
@@ -14181,5 +14360,2262 @@ assemble_lubrication_power_law( double time,    /* present time value */
 
   return(status);
 } /* end of assemble_lubrication_power_law */
+
+/***assemble_shell_normal******************************************************/
+/*  _______________________________________________________________________  */
+
+/* assemble_shell_normal -- assemble terms (Residuals and Jacobian) for
+ *                          definition of normal vector components of
+ *                          a shell element
+ *
+ * It solves n[a] - fv->snormal[a] = 0
+ * where:
+ *       n[a] = shell normal vector components
+ *
+ *
+ *
+ * in:
+ *      ei -- pointer to Element Indices        structure
+ *      pd -- pointer to Problem Description    structure
+ *      af -- pointer to Action Flag            structure
+ *      bf -- pointer to Basis Function         structure
+ *      fv -- pointer to Field Variable         structure
+ *
+ * out:
+ *      lec -- gets loaded up with local contributions to resid, Jacobian
+ *	r   -- residual RHS vector
+ *
+ * Created:     Thursday April 10 2014 tjiptowi@unm.edu
+ *
+ */
+/*ARGSUSED*/
+
+int
+assemble_shell_normal( double xi[DIM],   /* Local stu coordinates */
+                       const Exo_DB *exo )
+{
+ /*
+  * Integers and indices
+  */
+  int eqn;
+  int var, peqn, pvar;
+  int i = -1;
+  int j, status = 0;
+  int a, b, dim;
+
+  /*
+   * Galerkin weighting and basis functions
+   */
+  dbl phi_i, phi_j;
+
+
+ /*
+  * Local quantities
+  */
+  dbl normal[DIM];
+  dbl wt, h3;
+  dbl det_J;
+
+ /*
+  * Equation Terms Multipliers (ETM)
+  */
+  dbl diffusion;
+
+/************** PRECALCULATION ***********************/
+  dim = pd->Num_Dim;
+
+  normal[0] = fv->n[0];
+  normal[1] = fv->n[1];
+  normal[2] = fv->n[2];
+
+  wt = fv->wt;       /* Gauss weight */
+  h3 = fv->h3;       /* Differential volume element, = 1 when CARTESIAN. */
+
+  shell_determinant_and_normal(ei->ielem, ei->iconnect_ptr, ei->num_local_nodes,
+                                 ei->ielem_dim, 1);
+  det_J = fv->sdet;
+
+  /*
+   *_______________RESIDUAL ASSEMBLY ________________________________________
+   */
+
+ if (af->Assemble_Residual)
+   {
+    for (a = 0; a < dim; a++)
+       {
+        eqn = R_SHELL_NORMAL1 + a;
+        peqn = upd->ep[eqn];
+
+        for ( i=0; i<ei->dof[eqn]; i++)
+           {
+            phi_i = bf[eqn]->phi[i];
+
+/*Assemble diffusion term */
+
+            diffusion = 0.0;
+            if (pd->e[eqn] && T_DIFFUSION)
+              {
+               diffusion += phi_i * (normal[a] - fv->snormal[a]);
+               diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+              }
+
+            lec->R[peqn][i] += diffusion;
+           }
+       }
+   }  /* End of if assemble residual */
+
+  /*
+   *_________________ JACOBIAN  ASSEMBLY ________________________
+   */
+
+  if (af->Assemble_Jacobian)
+    {
+
+     for (a = 0; a < dim; a++)
+        {
+         eqn   = R_SHELL_NORMAL1 + a;
+         peqn = upd->ep[eqn];
+
+         for ( i=0; i<ei->dof[eqn]; i++)
+            {
+             phi_i = bf[eqn]->phi[i];
+
+             /* SENSITIVITY W.R.T. SHELL NORMAL COMPONENTS */
+
+             var = SHELL_NORMAL1;
+
+             if ( pd->v[var] )
+               {
+                for (b = 0; b < dim; b++)
+                   {
+                    var = SHELL_NORMAL1 + b;
+                    pvar = upd->vp[var];
+
+                    for ( j=0; j<ei->dof[var]; j++)
+                       {
+                        phi_j = bf[var]->phi[j];
+
+                        diffusion = 0.0;
+                        if (pd->e[eqn] && T_DIFFUSION)
+                          {
+                           diffusion += phi_i * phi_j * delta(a,b);
+
+                           diffusion *= det_J * wt * h3;
+                           diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                          }
+
+                        lec->J[peqn][pvar][i][j] += diffusion;
+                       }
+                   } /* End of loop over shell normal components VARIABLES */
+               }
+
+
+             /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+            var = MESH_DISPLACEMENT1;
+            if ( pd->v[var] )
+              {
+
+               /*** Loop over dimensions of mesh displacement ***/
+               for ( b = 0; b < dim; b++)
+                  {
+                   var = MESH_DISPLACEMENT1 + b;
+                   pvar = upd->vp[var];
+
+                   /*** Loop over DOFs (j) ***/
+                   for ( j=0; j < ei->dof[var]; j++)
+                      {
+                       phi_j = bf[var]->phi[j];
+
+                       diffusion = 0.0;
+                       if (pd->e[eqn] && T_DIFFUSION)
+                         {
+                          diffusion += phi_i * ( normal[a] - fv->snormal[a] ) * fv->dsurfdet_dx[b][j];
+                          diffusion += phi_i * (- fv->dsnormal_dx[a][b][j] ) * det_J;
+                          diffusion *= wt * h3;
+                          diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                         }
+
+                       lec->J[peqn][pvar][i][j] += diffusion;
+
+                      } /* End of loop over DOFs (j) */
+                  } /* End of loop over mesh displacements */
+              }
+
+            } /* End of loop over equations (i) */
+
+        } /* End of loop over shell normal components EQUATIONS */
+
+    }  /* End of if assemble_Jacobian */
+
+  return(status);
+
+} /* End of assemble_shell_normal */
+
+/*****************************************************************************/
+/***assemble_shell_curvature******************************************************/
+/*  _______________________________________________________________________  */
+
+/* assemble_shell_curvature -- assemble terms (Residuals and Jacobian) for
+ *                          definition of curvatures of a shell element
+ *
+ *
+ *
+ *
+ * in:
+ *	ei -- pointer to Element Indices        structure
+ *	pd -- pointer to Problem Description    structure
+ *	af -- pointer to Action Flag            structure
+ *	bf -- pointer to Basis Function         structure
+ *	fv -- pointer to Field Variable         structure
+ *
+ * out:
+ *	lec -- gets loaded up with local contributions to resid, Jacobian
+ *	r   -- residual RHS vector
+ *
+ * Created:     Wednesday Feb 4 2015 tjiptowi@unm.edu
+ *
+ */
+/*ARGSUSED*/
+
+int
+assemble_shell_curvature( double xi[DIM],   /* Local stu coordinates */
+                          const Exo_DB *exo )
+{
+ /*
+  * Integers and indices
+  */
+  int eqn;
+  int var, peqn, pvar;
+  int i = -1;
+  int j, status = 0;
+  int a, b, p, dim;
+
+  /*
+   * Galerkin weighting and basis functions
+   */
+  dbl phi_i, phi_j;
+
+ /*
+  * Local quantities
+  */
+  dbl K, K2;
+
+  dbl t0[DIM];
+  dbl t1[DIM];
+  dbl dt0_dx[DIM][DIM][MDE];
+  dbl dt1_dx[DIM][DIM][MDE];
+  dbl dt0_dnormal[DIM][DIM][MDE];
+  dbl dt1_dnormal[DIM][DIM][MDE];
+
+  dbl d_grad_n_dx[DIM][DIM][DIM][MDE];
+  dbl d_grad_n_dnormal[DIM][DIM][DIM][MDE];
+  dbl dnormal_dxi[DIM][DIM-1];
+  dbl d_dnormal_dxi_dx[DIM][DIM-1][DIM][MDE];
+  dbl d_dnormal_dxi_dnormal[DIM][DIM-1][DIM][MDE];
+
+  dbl curv0, curv1;
+  dbl dcurv0_dx[DIM][MDE], dcurv1_dx[DIM][MDE];
+  dbl dcurv0_dnormal[DIM][MDE], dcurv1_dnormal[DIM][MDE];
+
+  dbl wt, h3;
+  dbl det_J;
+
+ /*
+  * Equation Terms Multipliers (ETM)
+  */
+  dbl diffusion;
+
+/************** PRECALCULATION ***********************/
+  dim = pd->Num_Dim;
+
+
+  wt = fv->wt;       /* Gauss weight */
+  h3 = fv->h3;       /* Differential volume element, = 1 when CARTESIAN. */
+
+  K  = fv->sh_K;
+  K2 = fv->sh_K2;
+
+  shell_determinant_and_normal(ei->ielem, ei->iconnect_ptr, ei->num_local_nodes,
+                                 ei->ielem_dim, 1);
+  det_J = fv->sdet;
+
+  memset(dt0_dx, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt1_dx, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt0_dnormal, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt1_dnormal, 0.0, sizeof(double)*DIM*DIM*MDE);
+
+  shell_tangents(t0, t1, dt0_dx, dt1_dx);
+
+//  shell_tangents_seeded(t0, t1, dt0_dnormal, dt1_dnormal);
+
+  /******** NORMAL DERIVATIVES ************/
+
+  memset( d_grad_n_dx, 0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+  for (p = 0; p < dim; p++)
+     {
+      var = MESH_DISPLACEMENT1 + p;
+      for (b = 0; b < dim; b++)
+         {
+          for (a = 0; a < dim; a++)
+             {
+              for (j = 0; j < ei->dof[var]; j++)
+                 {
+                  d_grad_n_dx[b][a][p][j] = fv->d_grad_n_dmesh[b][a][p][j];
+                 }
+             }
+         }
+     }
+
+  memset( d_grad_n_dnormal, 0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+  for (p = 0; p < dim; p++)
+     {
+      var = SHELL_NORMAL1 + p;
+      for (b = 0; b < dim; b++)
+         {
+          for (a = 0; a < dim; a++)
+             {
+              for (j = 0; j < ei->dof[var]; j++)
+                 {
+                  d_grad_n_dnormal[b][a][p][j] = delta(p,a) * bf[var]->grad_phi[j][b];
+                 }
+             }
+         }
+     }
+
+  memset( dnormal_dxi, 0.0, sizeof(double)*DIM*(DIM-1));
+  for (a = 0; a < dim; a++)
+     {
+      for (b = 0; b < dim; b++)
+         {
+          dnormal_dxi[a][0] += t0[b] * fv->grad_n[b][a];
+          dnormal_dxi[a][1] += t1[b] * fv->grad_n[b][a];
+         }
+     }
+
+
+  memset( d_dnormal_dxi_dx, 0.0, sizeof(double)*DIM*(DIM-1)*DIM*MDE);
+  memset( d_dnormal_dxi_dnormal, 0.0, sizeof(double)*DIM*(DIM-1)*DIM*MDE);
+
+  for (p = 0; p < dim; p++)
+     {
+      var = MESH_DISPLACEMENT1 + p;
+      for (a = 0; a < dim; a ++)
+         {
+          for (b = 0; b < dim; b++)
+             {
+              for (j = 0; j < ei->dof[var]; j++)
+                 {
+                  d_dnormal_dxi_dx[a][0][p][j] +=   dt0_dx[b][p][j] * fv->grad_n[b][a]
+                                                  + t0[b] * d_grad_n_dx[b][a][p][j];
+                  d_dnormal_dxi_dx[a][1][p][j] +=   dt1_dx[b][p][j] * fv->grad_n[b][a]
+                                                  + t1[b] * d_grad_n_dx[b][a][p][j];
+                 }
+             }
+         }
+     }
+
+  for (p = 0; p < dim; p++)
+     {
+      var = SHELL_NORMAL1 + p;
+      for (a = 0; a < dim; a ++)
+         {
+          for (b = 0; b < dim; b++)
+             {
+              for (j = 0; j < ei->dof[var]; j++)
+                 {
+                  d_dnormal_dxi_dnormal[a][0][p][j] +=   dt0_dnormal[b][p][j] * fv->grad_n[b][a]
+                                                       + t0[b] * d_grad_n_dnormal[b][a][p][j];
+                  d_dnormal_dxi_dnormal[a][1][p][j] +=   dt1_dnormal[b][p][j] * fv->grad_n[b][a]
+                                                       + t1[b] * d_grad_n_dnormal[b][a][p][j];
+                 }
+             }
+         }
+     }
+
+  /******** CURVATURES ************/
+
+  curv0 = 0.0;
+  curv1 = 0.0;
+
+  for (a = 0; a < dim; a++)
+     {
+      curv0 -= t0[a] * dnormal_dxi[a][0];
+      curv1 -= t1[a] * dnormal_dxi[a][1];
+     }
+
+  memset( dcurv0_dx, 0.0, sizeof(double)*DIM*MDE);
+  memset( dcurv1_dx, 0.0, sizeof(double)*DIM*MDE);
+  memset( dcurv0_dnormal, 0.0, sizeof(double)*DIM*MDE);
+  memset( dcurv1_dnormal, 0.0, sizeof(double)*DIM*MDE);
+
+  for (b = 0; b < dim; b++)
+     {
+      var = MESH_DISPLACEMENT1 + b;
+      for (a = 0; a < dim; a++)
+         {
+          for (j = 0; j < ei->dof[var]; j++)
+             {
+              dcurv0_dx[b][j] -=   t0[a] * d_dnormal_dxi_dx[a][0][b][j]
+                                 + dt0_dx[a][b][j] * dnormal_dxi[a][0];
+              dcurv1_dx[b][j] -=   t1[a] * d_dnormal_dxi_dx[a][1][b][j]
+                                 + dt1_dx[a][b][j] * dnormal_dxi[a][1];
+             }
+         }
+     }
+
+  for (b = 0; b < dim; b++)
+     {
+      var = SHELL_NORMAL1 + b;
+      for (a = 0; a < dim; a++)
+         {
+          for (j = 0; j < ei->dof[var]; j++)
+             {
+              dcurv0_dnormal[b][j] -=   t0[a] * d_dnormal_dxi_dnormal[a][0][b][j]
+                                      + dt0_dnormal[a][b][j] * dnormal_dxi[a][0];
+              dcurv1_dnormal[b][j] -=   t1[a] * d_dnormal_dxi_dnormal[a][1][b][j]
+                                      + dt1_dnormal[a][b][j] * dnormal_dxi[a][1];
+             }
+         }
+     }
+
+
+  /*
+   *_______________RESIDUAL ASSEMBLY ________________________________________
+   */
+
+ if (af->Assemble_Residual)
+   {
+
+/* ************** ASSEMBLE RESIDUAL OF FIRST CURVATURE ********* */
+
+    eqn = R_SHELL_CURVATURE;
+    peqn = upd->ep[eqn];
+
+    for ( i=0; i<ei->dof[eqn]; i++)
+       {
+        phi_i = bf[eqn]->phi[i];
+
+/*Assemble diffusion term */
+
+        diffusion = 0.0;
+        if (pd->e[eqn] && T_DIFFUSION)
+          {
+           diffusion += phi_i * (K - curv0);
+           diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+          }
+
+           lec->R[peqn][i] += diffusion;
+       }
+
+
+/* ************** ASSEMBLE RESIDUAL OF SECOND CURVATURE ********* */
+
+    eqn = R_SHELL_CURVATURE2;
+    peqn = upd->ep[eqn];
+
+    for ( i=0; i<ei->dof[eqn]; i++)
+       {
+        phi_i = bf[eqn]->phi[i];
+
+/*Assemble diffusion term */
+
+        diffusion = 0.0;
+        if (pd->e[eqn] && T_DIFFUSION)
+          {
+           diffusion += phi_i * (K2 - curv1);
+           diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+          }
+
+           lec->R[peqn][i] += diffusion;
+       }
+   }  /* End of if assemble residual */
+
+  /*
+   *_________________ JACOBIAN  ASSEMBLY ________________________
+   */
+
+  if (af->Assemble_Jacobian)
+    {
+
+/* ************* ASSEMBLE JACOBIAN OF FIRST CURVATURE ************ */
+
+     eqn   = R_SHELL_CURVATURE;
+     peqn = upd->ep[eqn];
+
+     for ( i=0; i<ei->dof[eqn]; i++)
+        {
+         phi_i = bf[eqn]->phi[i];
+
+         /* SENSITIVITY W.R.T. SHELL FIRST CURVATURE */
+
+         var = SHELL_CURVATURE;
+
+         if ( pd->v[var] )
+           {
+            pvar = upd->vp[var];
+
+            for ( j=0; j<ei->dof[var]; j++)
+               {
+                phi_j = bf[var]->phi[j];
+
+                diffusion = 0.0;
+                if (pd->e[eqn] && T_DIFFUSION)
+                  {
+                   diffusion += phi_i * phi_j;
+
+                   diffusion *= det_J * wt * h3;
+                   diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                  }
+
+                lec->J[peqn][pvar][i][j] += diffusion;
+               }
+           }
+
+         /* SENSITIVITY W.R.T. SHELL NORMAL COMPONENTS */
+
+         var = SHELL_NORMAL1;
+
+         if ( pd->v[var] )
+           {
+            for (b = 0; b < dim; b++)
+               {
+                var = SHELL_NORMAL1 + b;
+                pvar = upd->vp[var];
+
+                for ( j=0; j<ei->dof[var]; j++)
+                   {
+                    diffusion = 0.0;
+                    if (pd->e[eqn] && T_DIFFUSION)
+                      {
+                       diffusion += - phi_i * dcurv0_dnormal[b][j];
+
+                       diffusion *= det_J * wt * h3;
+                       diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                      }
+
+                    lec->J[peqn][pvar][i][j] += diffusion;
+                   }
+               } /* End of loop over shell normal components VARIABLES */
+           }
+
+         /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+         var = MESH_DISPLACEMENT1;
+         if ( pd->v[var] )
+           {
+
+            /*** Loop over dimensions of mesh displacement ***/
+            for ( b = 0; b < dim; b++)
+               {
+                var = MESH_DISPLACEMENT1 + b;
+                pvar = upd->vp[var];
+
+                /*** Loop over DOFs (j) ***/
+                for ( j=0; j < ei->dof[var]; j++)
+                   {
+                    phi_j = bf[var]->phi[j];
+
+                    diffusion = 0.0;
+                    if (pd->e[eqn] && T_DIFFUSION)
+                      {
+                       diffusion += phi_i * ( K - curv0 ) * fv->dsurfdet_dx[b][j];
+                       diffusion += phi_i * (- dcurv0_dx[b][j] ) * det_J;
+                       diffusion *= wt * h3;
+                       diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                      }
+
+                    lec->J[peqn][pvar][i][j] += diffusion;
+
+                   } /* End of loop over DOFs (j) */
+               } /* End of loop over mesh displacements */
+           }
+
+	} /* End of loop over equations (i) */
+
+/* ************* ASSEMBLE JACOBIAN OF SECOND CURVATURE ************ */
+
+     eqn   = R_SHELL_CURVATURE2;
+     peqn = upd->ep[eqn];
+
+     for ( i=0; i<ei->dof[eqn]; i++)
+        {
+         phi_i = bf[eqn]->phi[i];
+
+         /* SENSITIVITY W.R.T. SHELL SECOND CURVATURE */
+
+         var = SHELL_CURVATURE2;
+
+         if ( pd->v[var] )
+           {
+            pvar = upd->vp[var];
+
+            for ( j=0; j<ei->dof[var]; j++)
+               {
+                phi_j = bf[var]->phi[j];
+
+                diffusion = 0.0;
+                if (pd->e[eqn] && T_DIFFUSION)
+                  {
+                   diffusion += phi_i * phi_j;
+
+                   diffusion *= det_J * wt * h3;
+                   diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                  }
+
+                lec->J[peqn][pvar][i][j] += diffusion;
+               }
+           }
+
+         /* SENSITIVITY W.R.T. SHELL NORMAL COMPONENTS */
+
+         var = SHELL_NORMAL1;
+
+         if ( pd->v[var] )
+           {
+            for (b = 0; b < dim; b++)
+               {
+                var = SHELL_NORMAL1 + b;
+                pvar = upd->vp[var];
+
+                for ( j=0; j<ei->dof[var]; j++)
+                   {
+                    diffusion = 0.0;
+                    if (pd->e[eqn] && T_DIFFUSION)
+                      {
+                       diffusion += - phi_i * dcurv1_dnormal[b][j];
+
+                       diffusion *= det_J * wt * h3;
+                       diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                      }
+
+                    lec->J[peqn][pvar][i][j] += diffusion;
+                   }
+               } /* End of loop over shell normal components VARIABLES */
+           }
+
+
+         /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+         var = MESH_DISPLACEMENT1;
+         if ( pd->v[var] )
+           {
+
+            /*** Loop over dimensions of mesh displacement ***/
+            for ( b = 0; b < dim; b++)
+               {
+                var = MESH_DISPLACEMENT1 + b;
+                pvar = upd->vp[var];
+
+                /*** Loop over DOFs (j) ***/
+                for ( j=0; j < ei->dof[var]; j++)
+                   {
+                    phi_j = bf[var]->phi[j];
+
+                    diffusion = 0.0;
+                    if (pd->e[eqn] && T_DIFFUSION)
+                      {
+                       diffusion += phi_i * ( K2 - curv1 ) * fv->dsurfdet_dx[b][j];
+                       diffusion += phi_i * (- dcurv1_dx[b][j] ) * det_J;
+                       diffusion *= wt * h3;
+                       diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                      }
+
+                    lec->J[peqn][pvar][i][j] += diffusion;
+
+                   } /* End of loop over DOFs (j) */
+               } /* End of loop over mesh displacements */
+           }
+
+	} /* End of loop over equations (i) */
+
+    }  /* End of if assemble_Jacobian */
+
+  return(status);
+
+} /* End of assemble_shell_curvature */
+
+/*****************************************************************************/
+/***assemble_shell_mesh*******************************************************/
+/*  _______________________________________________________________________  */
+
+/* assemble_shell_mesh -- assemble terms (Residuals and Jacobian) for
+ *                        shell mesh equations
+ *
+ * in:
+ *	ei -- pointer to Element Indices        structure
+ *	pd -- pointer to Problem Description    structure
+ *	af -- pointer to Action Flag            structure
+ *	bf -- pointer to Basis Function         structure
+ *	fv -- pointer to Field Variable         structure
+ *
+ * out:
+ *	a   -- gets loaded up with proper contribution
+ *	lec -- gets loaded up with local contributions to resid, Jacobian
+ *	r   -- residual RHS vector
+ *
+ * Created:     Thursday June 26 2014 tjiptowi@unm.edu
+ *
+ */
+/*ARGSUSED*/
+
+int
+assemble_shell_mesh( double xi[DIM],   /* Local stu coordinates */
+                     const Exo_DB *exo )
+{
+
+ /*
+  * Integers and indices
+  */
+  int eqn;
+  int var, peqn, pvar, dim, a, b;
+  int i, j;
+  int status = 0;
+  int *n_dof = NULL;
+  int dof_map[MDE];
+
+  /*
+   * Galerkin weighting functions for i-th shell residuals
+   * and some of their derivatives...
+   */
+  dbl phi_i;
+  dbl grad_phi_i[DIM];
+  dbl d_grad_phi_i_dmesh[DIM][DIM][MDE];
+
+  /*
+   * Interpolation functions for variables and some of their derivatives.
+   */
+  dbl phi_j;
+
+ /*
+  * Local quantities
+  */
+  dbl N11, N22, N12;
+  dbl K1, K2;
+  dbl P_load;
+  dbl d_P_load_dlubp[MDE];
+
+  dbl t0[DIM];
+  dbl t1[DIM];
+  dbl dt0_dx[DIM][DIM][MDE];
+  dbl dt1_dx[DIM][DIM][MDE];
+  dbl dt0_dnormal[DIM][DIM][MDE];
+  dbl dt1_dnormal[DIM][DIM][MDE];
+
+  dbl TT[DIM][DIM];
+  dbl dTT_dx[DIM][DIM][DIM][MDE];
+  dbl dTT_dnormal[DIM][DIM][DIM][MDE];
+
+  dbl M[DIM][DIM];
+  dbl dM_dx[DIM][DIM][DIM][MDE];
+  dbl dM_dnormal[DIM][DIM][DIM][MDE];
+  dbl dM_dcurv0[DIM][DIM][MDE];
+  dbl dM_dcurv1[DIM][DIM][MDE];
+
+  dbl M11, M12, M22;
+
+  dbl wt, h3;
+  dbl det_J;
+
+ /*
+  * Equation Terms Multipliers (ETM)
+  */
+  dbl diffusion, source;
+
+
+  /* Unpack variables from structures for local convenience... */
+  dim = pd->Num_Dim;
+
+  memset(dt0_dx, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt1_dx, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt0_dnormal, 0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dt1_dnormal, 0.0, sizeof(double)*DIM*DIM*MDE);
+
+
+  /* Get tangents and curvatures */
+  shell_tangents(t0, t1, dt0_dx, dt1_dx);
+
+//  shell_tangents_seeded(t0, t1, dt0_dnormal, dt1_dnormal);
+
+  /* Get curvatures */
+  K1 = fv->sh_K;
+  K2 = fv->sh_K2;
+
+
+  memset(d_P_load_dlubp, 0.0, sizeof(double)*MDE);
+  if (pd->e[R_LUBP])
+    {
+     P_load = fv->lubp;
+     var = LUBP;
+     for (j = 0; j < ei->dof[var]; j++)
+        {
+         phi_j = bf[var]->phi[j];
+         d_P_load_dlubp[j] = phi_j;
+        }
+    }
+  else
+    {
+     P_load = 0.0;
+    }
+
+  memset(TT,  0.0, sizeof(double)*DIM*DIM);
+  memset(dTT_dx,  0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+  memset(dTT_dnormal,  0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+
+  shell_stress_tensor(TT, dTT_dx, dTT_dnormal);
+
+
+  N11 = TT[0][0];
+  N12 = TT[0][1];
+  N22 = TT[1][1];
+
+  memset(M,  0.0, sizeof(double)*DIM*DIM);
+  memset(dM_dx,  0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+  memset(dM_dnormal,  0.0, sizeof(double)*DIM*DIM*DIM*MDE);
+  memset(dM_dcurv0,  0.0, sizeof(double)*DIM*DIM*MDE);
+  memset(dM_dcurv1,  0.0, sizeof(double)*DIM*DIM*MDE);
+
+  shell_moment_tensor(M, dM_dx, dM_dnormal, dM_dcurv0, dM_dcurv1);
+
+  M11 = M[0][0];
+  M12 = M[0][1];
+  M22 = M[1][1];
+
+  wt = fv->wt;       /* Gauss weight */
+  h3 = fv->h3;       /* Differential volume element, = 1 when CARTESIAN. */
+
+  /* Prepare geometry and calculate normal */
+  n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
+  lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
+
+  det_J = fv->sdet;
+
+  /*
+   *_______________RESIDUAL ASSEMBLY ________________________________________
+   */
+
+  if (af->Assemble_Residual)
+    {
+
+/* ************** ASSEMBLE RESIDUAL OF TANGENTIAL STRESS BALANCE IN DIRECTION 1 ********* */
+
+      eqn = R_MESH2;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+
+         for (a = 0; a < dim; a++)
+            {
+             grad_phi_i[a] = bf[eqn]->grad_phi[i][a];
+            }
+
+/* Assemble diffusion term */
+
+          diffusion = 0.0;
+          if (pd->e[eqn] && T_DIFFUSION)
+            {
+             for (a = 0; a < dim; a++)
+                {
+                 diffusion -=   t0[a] * grad_phi_i[a] * N11
+                              + t1[a] * grad_phi_i[a] * N12;
+
+                 diffusion -=   K1 * (t0[a] * grad_phi_i[a] * M11 +
+                                      t1[a] * grad_phi_i[a] * M12);
+                }
+             diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+            }
+
+/* Assemble source term */
+
+          source = 0.0;
+          if (pd->e[eqn] && T_SOURCE)
+            {
+
+             source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
+            }
+
+          lec->R[peqn][i] += diffusion + source;
+        }
+
+/* ************** ASSEMBLE RESIDUAL OF TANGENTIAL STRESS BALANCE IN DIRECTION 2 ********* */
+
+      eqn = R_MESH1;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+
+         for (a = 0; a < dim; a++)
+            {
+             grad_phi_i[a] = bf[eqn]->grad_phi[i][a];
+            }
+
+/* Assemble diffusion term */
+
+          diffusion = 0.0;
+          if (pd->e[eqn] && T_DIFFUSION)
+            {
+             for (a = 0; a < dim; a++)
+                {
+                 diffusion -=   t0[a] * grad_phi_i[a] * N12
+                              + t1[a] * grad_phi_i[a] * N22;
+
+                 diffusion -=   K2 * (t0[a] * grad_phi_i[a] * M12 +
+                                      t1[a] * grad_phi_i[a] * M22);
+                }
+             diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+            }
+
+/* Assemble source term */
+
+          source = 0.0;
+          if (pd->e[eqn] && T_SOURCE)
+            {
+
+             source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
+            }
+
+          lec->R[peqn][i] += diffusion + source;
+        }
+
+
+/* ************** ASSEMBLE RESIDUAL OF NORMAL STRESS BALANCE  ********* */
+
+      eqn = R_MESH3;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+
+         phi_i = bf[eqn]->phi[i];
+
+/* Assemble diffusion term */
+
+          diffusion = 0.0;
+          if (pd->e[eqn] && T_DIFFUSION)
+            {
+             diffusion += phi_i * ( K1 * N11 + K2 * N22 );
+
+             for (a = 0; a < dim; a++)
+                {
+                 diffusion +=   t0[a] * grad_phi_i[a] * (M11 + M12)
+                              + t1[a] * grad_phi_i[a] * (M12 + M22);
+                }
+
+             diffusion *= det_J * wt * h3 * pd->etm[eqn][(LOG2_DIFFUSION)];
+            }
+
+/* Assemble source term */
+
+          source = 0.0;
+          if (pd->e[eqn] && T_SOURCE)
+            {
+             source -= phi_i * P_load;
+             source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
+            }
+
+          lec->R[peqn][i] += diffusion + source;
+        }
+
+    } /* End of if Assemble_Residual */
+
+  /*
+   *_________________ JACOBIAN  ASSEMBLY ________________________
+   */
+
+  if (af->Assemble_Jacobian)
+    {
+
+/* ************* ASEMBLE JACOBIAN OF TANGENTIAL STRESS BALANCE DIRECTION 1 ************ */
+
+      eqn   = R_MESH2;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+         for (a = 0; a < dim; a++)
+            {
+             grad_phi_i[a] = bf[eqn]->grad_phi[i][a];
+            }
+
+
+          /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+          var = MESH_DISPLACEMENT1;
+          if ( pd->v[var] )
+            {
+
+             for (a = 0; a < dim; a++)
+                {
+                 for (b = 0; b < dim; b++)
+                    {
+                     for (j = 0; j < ei->dof[var]; j++)
+                        {
+                         d_grad_phi_i_dmesh[a][b][j] = bf[eqn]->d_grad_phi_dmesh[i][a][b][j];
+                        }
+                    }
+                }
+
+             /*** Loop over dimensions of mesh displacement ***/
+             for ( b = 0; b < dim; b++)
+                {
+                 var = MESH_DISPLACEMENT1 + b;
+                 pvar = upd->vp[var];
+
+                 /*** Loop over DOFs (j) ***/
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        for (a = 0; a < dim; a++)
+                           {
+                             diffusion -= (  t0[a] * grad_phi_i[a] * dTT_dx[0][0][b][j]
+                                           + t1[a] * grad_phi_i[a] * dTT_dx[0][1][b][j]
+                                           + K1 * t0[a] * grad_phi_i[a] * dM_dx[0][0][b][j]
+                                           + K1 * t1[a] * grad_phi_i[a] * dM_dx[0][1][b][j] ) * det_J;
+                             diffusion -= (  t0[a] * d_grad_phi_i_dmesh[a][b][j] * N11
+                                           + t1[a] * d_grad_phi_i_dmesh[a][b][j] * N12
+                                           + K1 * t0[a] * d_grad_phi_i_dmesh[a][b][j] * M11
+                                           + K1 * t1[a] * d_grad_phi_i_dmesh[a][b][j] * M12 ) * det_J;
+                             diffusion -= (  dt0_dx[a][b][j] * grad_phi_i[a] * N11
+                                           + dt1_dx[a][b][j] * grad_phi_i[a] * N12
+                                           + K1 * dt0_dx[a][b][j] * grad_phi_i[a] * M11
+                                           + K1 * dt1_dx[a][b][j] * grad_phi_i[a] * M12) * det_J;
+                             diffusion -= (  t0[a] * grad_phi_i[a] * N11
+                                           + t1[a] * grad_phi_i[a] * N12
+                                           + K1 * t0[a] * grad_phi_i[a] * M11
+                                           + K1 * t1[a] * grad_phi_i[a] * M12) * fv->dsurfdet_dx[b][j];
+                           }
+                        diffusion *= wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+
+                     source = 0.0;
+                     if (pd->e[eqn] && T_SOURCE)
+                       {
+
+                        source *= wt * h3;
+                        source *= pd->etm[eqn][(LOG2_SOURCE)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion + source;
+
+                    } /* End of loop over DOFs (j) */
+                } /* End of loop over mesh displacements */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL NORMALS */
+
+          var = SHELL_NORMAL1;
+          if ( pd->v[var] )
+            {
+             for (b = 0; b < dim; b++)
+                {
+                 var = SHELL_NORMAL1 + b;
+                 pvar = upd->vp[var];
+
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        for (a = 0; a < dim; a++)
+                           {
+                            diffusion -= (  t0[a] * grad_phi_i[a] * dTT_dnormal[0][0][b][j]
+                                          + dt0_dnormal[a][b][j] * grad_phi_i[a] * N11
+                                          + t1[a] * grad_phi_i[a] * dTT_dnormal[0][1][b][j]
+                                          + dt1_dnormal[a][b][j] * grad_phi_i[a] * N12
+                                          + K1 * t0[a] * grad_phi_i[a] * dM_dnormal[0][0][b][j]
+                                          + K1 * dt0_dnormal[a][b][j] * grad_phi_i[a] * M11
+                                          + K1 * t1[a] * grad_phi_i[a] * dM_dnormal[0][1][b][j]
+                                          + K1 * dt1_dnormal[a][b][j] * grad_phi_i[a] * M12);
+                           }
+                        diffusion *= det_J * wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion;
+
+                    } /* End of loop over DOF j */
+                } /* End of loop over shell normal components */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL CURVATURES */
+
+          var = SHELL_CURVATURE;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+                 phi_j = bf[var]->phi[j];
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion -=   phi_j * t0[a] * grad_phi_i[a] * M11
+                                     + K1 * t0[a] * grad_phi_i[a] * dM_dcurv0[0][0][j]
+                                     + phi_j * t1[a] * grad_phi_i[a] * M12
+                                     + K1 * t1[a] * grad_phi_i[a] * dM_dcurv0[0][1][j];
+                       }
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+          var = SHELL_CURVATURE2;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion -=   K1 * t0[a] * grad_phi_i[a] * dM_dcurv1[0][0][j]
+                                     + K1 * t1[a] * grad_phi_i[a] * dM_dcurv1[0][1][j];
+                       }
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+	} /* End of loop over equation i */
+
+/* ************* ASEMBLE JACOBIAN OF TANGENTIAL STRESS BALANCE DIRECTION 2 ************ */
+
+      eqn   = R_MESH1;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+         for (a = 0; a < dim; a++)
+            {
+             grad_phi_i[a] = bf[eqn]->grad_phi[i][a];
+            }
+
+
+          /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+          var = MESH_DISPLACEMENT1;
+          if ( pd->v[var] )
+            {
+
+             for (a = 0; a < dim; a++)
+                {
+                 for (b = 0; b < dim; b++)
+                    {
+                     for (j = 0; j < ei->dof[var]; j++)
+                        {
+                         d_grad_phi_i_dmesh[a][b][j] = bf[eqn]->d_grad_phi_dmesh[i][a][b][j];
+                        }
+                    }
+                }
+
+             /*** Loop over dimensions of mesh displacement ***/
+             for ( b = 0; b < dim; b++)
+                {
+                 var = MESH_DISPLACEMENT1 + b;
+                 pvar = upd->vp[var];
+
+                 /*** Loop over DOFs (j) ***/
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        for (a = 0; a < dim; a++)
+                           {
+                             diffusion -= (  t0[a] * grad_phi_i[a] * dTT_dx[0][1][b][j]
+                                           + t1[a] * grad_phi_i[a] * dTT_dx[1][1][b][j]
+                                           + K2 * t0[a] * grad_phi_i[a] * dM_dx[0][1][b][j]
+                                           + K2 * t1[a] * grad_phi_i[a] * dM_dx[1][1][b][j]) * det_J;
+                             diffusion -= (  t0[a] * d_grad_phi_i_dmesh[a][b][j] * N12
+                                           + t1[a] * d_grad_phi_i_dmesh[a][b][j] * N22
+                                           + K2 * t0[a] * d_grad_phi_i_dmesh[a][b][j] * M12
+                                           + K2 * t1[a] * d_grad_phi_i_dmesh[a][b][j] * M22) * det_J;
+                             diffusion -= (  dt0_dx[a][b][j] * grad_phi_i[a] * N12
+                                           + dt1_dx[a][b][j] * grad_phi_i[a] * N22
+                                           + K2 * dt0_dx[a][b][j] * grad_phi_i[a] * M12
+                                           + K2 * dt1_dx[a][b][j] * grad_phi_i[a] * M22) * det_J;
+                             diffusion -= (  t0[a] * grad_phi_i[a] * N12
+                                           + t1[a] * grad_phi_i[a] * N22
+                                           + K2 * t0[a] * grad_phi_i[a] * M12
+                                           + K2 * t1[a] * grad_phi_i[a] * M22) * fv->dsurfdet_dx[b][j];
+                           }
+                        diffusion *= wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+                     source = 0.0;
+                     if (pd->e[eqn] && T_SOURCE)
+                       {
+
+                        source *= wt * h3;
+                        source *= pd->etm[eqn][(LOG2_SOURCE)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion + source;
+
+                    } /* End of loop over DOFs (j) */
+                } /* End of loop over mesh displacements */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL NORMALS */
+
+          var = SHELL_NORMAL1;
+          if ( pd->v[var] )
+            {
+             for (b = 0; b < dim; b++)
+                {
+                 var = SHELL_NORMAL1 + b;
+                 pvar = upd->vp[var];
+
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        for (a = 0; a < dim; a++)
+                           {
+                            diffusion -= (   t0[a] * grad_phi_i[a] * dTT_dnormal[0][1][b][j]
+                                           + dt0_dnormal[a][b][j] * grad_phi_i[a] * N12
+                                           + t1[a] * grad_phi_i[a] * dTT_dnormal[1][1][b][j]
+                                           + dt1_dnormal[a][b][j] * grad_phi_i[a] * N22
+                                           + K2 * t0[a] * grad_phi_i[a] * dM_dnormal[0][1][b][j]
+                                           + K2 * dt0_dnormal[a][b][j] * grad_phi_i[a] * M12
+                                           + K2 * t1[a] * grad_phi_i[a] * dM_dnormal[1][1][b][j]
+                                           + K2 * dt1_dnormal[a][b][j] * grad_phi_i[a] * M22 );
+                           }
+                        diffusion *= det_J * wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion;
+
+                    } /* End of loop over DOF j */
+                } /* End of loop over shell normal components */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL CURVATURES */
+
+          var = SHELL_CURVATURE;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion -=   K2 * t0[a] * grad_phi_i[a] * dM_dcurv0[0][1][j]
+                                     + K2 * t1[a] * grad_phi_i[a] * dM_dcurv0[1][1][j];
+                       }
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+         var = SHELL_CURVATURE2;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+                 phi_j = bf[var]->phi[j];
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion -=   phi_j * t0[a] * grad_phi_i[a] * M12
+                                     + K2 * t0[a] * grad_phi_i[a] * dM_dcurv1[0][1][j]
+                                     + phi_j * t1[a] * grad_phi_i[a] * M22
+                                     + K2 * t1[a] * grad_phi_i[a] * dM_dcurv1[1][1][j];
+                       }
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+        } /* End of loop over equation i */
+
+
+/* ************* ASEMBLE JACOBIAN OF NORMAL STRESS BALANCE  ************ */
+
+      eqn   = R_MESH3;
+      peqn = upd->ep[eqn];
+
+      for ( i=0; i<ei->dof[eqn]; i++)
+        {
+         phi_i = bf[eqn]->phi[i];
+
+
+          /* SENSITIVITY W.R.T. MESH DISPLACEMENT */
+
+          var = MESH_DISPLACEMENT1;
+          if ( pd->v[var] )
+            {
+
+             /*** Loop over dimensions of mesh displacement ***/
+             for ( b = 0; b < dim; b++)
+                {
+                 var = MESH_DISPLACEMENT1 + b;
+                 pvar = upd->vp[var];
+
+                 /*** Loop over DOFs (j) ***/
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        diffusion += phi_i * (  K1 * dTT_dx[0][0][b][j]
+                                              + K2 * dTT_dx[1][1][b][j] ) * det_J;
+
+                        diffusion += phi_i * ( K1 * N11 + K2 * N22 ) * fv->dsurfdet_dx[b][j];
+
+                        for (a = 0; a < dim; a++)
+                           {
+                            diffusion += (  dt0_dx[a][b][j] * grad_phi_i[a] * (M11 + M12)
+                                          + dt1_dx[a][b][j] * grad_phi_i[a] * (M12 + M22)
+                                          + t0[a] * d_grad_phi_i_dmesh[a][b][j] * (M11 + M12)
+                                          + t1[a] * d_grad_phi_i_dmesh[a][b][j] * (M12 + M22)
+                                          + t0[a] * grad_phi_i[a] * (dM_dx[0][0][b][j] + dM_dx[0][1][b][j])
+                                          + t1[a] * grad_phi_i[a] * (dM_dx[0][1][b][j] + dM_dx[1][1][b][j])  ) * det_J;
+
+                            diffusion += (  t0[a] * grad_phi_i[a] * (M11 + M12)
+                                          + t1[a] * grad_phi_i[a] * (M12 + M22) ) * fv->dsurfdet_dx[b][j];
+                           }
+
+                        diffusion *= wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+                     source = 0.0;
+                     if (pd->e[eqn] && T_SOURCE)
+                       {
+                        source -= phi_i * P_load * fv->dsurfdet_dx[b][j];
+                        source *= wt * h3;
+                        source *= pd->etm[eqn][(LOG2_SOURCE)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion + source;
+
+                    } /* End of loop over DOF j */
+                } /* End of loop over mesh components */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL NORMALS */
+
+          var = SHELL_NORMAL1;
+          if ( pd->v[var] )
+            {
+             for (b = 0; b < dim; b++)
+                {
+                 var = SHELL_NORMAL1 + b;
+                 pvar = upd->vp[var];
+
+                 for ( j=0; j < ei->dof[var]; j++)
+                    {
+
+                     diffusion = 0.0;
+                     if (pd->e[eqn] && T_DIFFUSION)
+                       {
+                        diffusion += phi_i * (  K1 * dTT_dnormal[0][0][b][j]
+                                              + K2 * dTT_dnormal[1][1][b][j] );
+
+                        for (a = 0; a < dim; a++)
+                           {
+                            diffusion += (  dt0_dnormal[a][b][j] * grad_phi_i[a] * (M11 + M12)
+                                          + t0[a] * grad_phi_i[a] * (dM_dnormal[0][0][b][j] + dM_dnormal[0][1][b][j])
+                                          + dt1_dnormal[a][b][j] * grad_phi_i[a] * (M12 + M22)
+                                          + t1[a] * grad_phi_i[a] * (dM_dnormal[0][1][b][j] + dM_dnormal[1][1][b][j]) );
+                           }
+
+                        diffusion *= det_J * wt * h3;
+                        diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                       }
+
+                     lec->J[peqn][pvar][i][j] += diffusion;
+
+                    } /* End of loop over DOF j */
+                } /* End of loop over shell normal components */
+            }
+
+          /* SENSITIVITY W.R.T. SHELL FIRST CURVATURE */
+
+          var = SHELL_CURVATURE;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+                 phi_j = bf[var]->phi[j];
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    diffusion += phi_i * phi_j * N11;
+
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion +=    t0[a] * grad_phi_i[a] * (dM_dcurv0[0][0][j] + dM_dcurv0[0][1][j])
+                                      + t1[a] * grad_phi_i[a] * (dM_dcurv0[0][1][j] + dM_dcurv0[1][1][j]);
+                       }
+
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+          /* SENSITIVITY W.R.T. SHELL SECOND CURVATURE */
+
+          var = SHELL_CURVATURE2;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+
+             for ( j=0; j < ei->dof[var]; j++)
+                {
+                 phi_j = bf[var]->phi[j];
+
+                 diffusion = 0.0;
+                 if (pd->e[eqn] && T_DIFFUSION)
+                   {
+                    diffusion += phi_i * phi_j * N22;
+
+                    for (a = 0; a < dim; a++)
+                       {
+                        diffusion += (  t0[a] * grad_phi_i[a] * (dM_dcurv1[0][0][j] + dM_dcurv1[0][1][j])
+                                      + t1[a] * grad_phi_i[a] * (dM_dcurv1[0][1][j] + dM_dcurv1[1][1][j])  );
+                       }
+
+                    diffusion *= det_J * wt * h3;
+                    diffusion *= pd->etm[eqn][(LOG2_DIFFUSION)];
+                   }
+                 lec->J[peqn][pvar][i][j] += diffusion;
+                }
+            }
+
+          /* SENSITIVITY W.R.T. LUBRICATION PRESSURE */
+
+          var = LUBP;
+          if ( pd->v[var] )
+            {
+             pvar = upd->vp[var];
+             for ( j=0; j<ei->dof[var]; j++)
+                {
+
+                 source = 0.0;
+                 if (pd->e[eqn] && T_SOURCE)
+                   {
+                    source -= phi_i * d_P_load_dlubp[j];
+                    source *= det_J * wt * h3 * pd->etm[eqn][(LOG2_SOURCE)];
+                   }
+
+                 lec->J[peqn][pvar][i][j] += source;
+                }
+            }
+
+	} /* End of loop over equation i */
+
+
+    } /* End of if Assemble_Jacobian */
+
+    /* clean-up */
+  safe_free((void *) n_dof);
+
+
+  return(status);
+
+} /* End of assemble_shell_mesh */
+
+/******************************************************************************
+ * assemble_shell_tfmp - Assembles the residual and Jacobian equations for
+ *                       thin film multiphase flow.
+ *
+ *           0 = d_dt(S h) + div(h v_l)
+ *           0 = d_dt(rho_g (1-S) h) + div(rho_g h v_g) + J
+ *                      
+ *
+ * Returns
+ * ======
+ * 0  = Success
+ * *  = Failure : There are no failure checks, segfaults may result from 
+ *                unassigned material properties.
+ *
+ * Revision History
+ * ================
+ * 7 May 2002 - Patrick Notz - Creation.
+ * 5 November 2014 - Andrew Cochrane - worked into thin-film multiphase flow model
+ * 14 July 2016 - Andrew Cochrane changing to a two mass balance approach
+ *                Using R_TFMP_MASS as liquid mass balance
+ *                Using R_TFMP_BOUND as gas mass balance
+ *
+ * 9 September 2016 - AC change gas mass balance to compressible gas
+ *
+ * 31 May 2017 - Prepare for inclusion in repository 
+ ******************************************************************************/
+
+int
+assemble_shell_tfmp(double time,   /* Time */
+		 double tt,        /* Time stepping parameter */
+		 double delta_t,      /* Time step size */
+		 double xi[DIM],      /* Local stu coordinates */
+		 PG_DATA *pg_data, /* Upwinding data struct */
+                 const Exo_DB *exo)
+{
+  int i, j, k, peqn, var, pvar;
+  dbl phi_i, grad_phi_i[DIM], gradII_phi_i[DIM]; // Basis funcitons (i)
+  dbl d_gradII_phi_i_dmesh[DIM][DIM][MDE];
+  dbl phi_j, grad_phi_j[DIM], gradII_phi_j[DIM]; // Basis funcitons (j)
+  dbl d_gradII_phi_j_dmesh[DIM][DIM][MDE];
+  dbl mass, adv, diff, source; // Residual terms
+  dbl etm_mass_eqn, etm_adv_eqn, etm_diff_eqn, etm_source_eqn;
+  int eqn;
+  double wt    = fv->wt;
+  double h3    = fv->h3;
+
+  // need pure phase viscosities
+  double mu_l, mu_g;
+
+  switch(mp->tfmp_viscosity_model){
+  case CONSTANT:
+    mu_g = mp->tfmp_viscosity_const[0];
+    mu_l = mp->tfmp_viscosity_const[1];
+    break;
+  default:
+    WH(-1, "There is no tfmp viscosity");
+    return -1;
+    break;
+  }
+  
+  // drop pitch for square lattice
+  dbl lambda, Vd;
+  
+  switch(mp->tfmp_drop_lattice_model) {
+  case TFMP_SQUARE:
+    lambda = mp->tfmp_drop_lattice_const[0]; // cm
+    Vd = mp->tfmp_drop_lattice_const[1];// cm^3
+    break;
+  default:
+    lambda = Vd = 1.0;
+    if (mp->tfmp_dissolution_model != NO_MODEL) {
+      WH(-1, "The lattice model is not set and the dissolution model is not NO_MODEL");
+      return -1;
+    }
+    break;
+  }
+
+  double S = fv->tfmp_sat;
+
+  // ideal gas law mat props
+  double Mg, R, T, Patm;
+  double rho_g, drho_g_dP;
+  switch(mp->tfmp_density_model) {
+  case IDEAL_GAS:
+    Mg =   mp->tfmp_density_const[0]; // grams per mole
+    R =    mp->tfmp_density_const[1]; 
+    T =    mp->tfmp_density_const[2];
+    Patm = mp->tfmp_density_const[3];
+    rho_g = fv->tfmp_pres*Mg/R/T;
+    drho_g_dP = Mg/R/T;
+    break;
+  case CONSTANT:
+  default:
+    // still use the ambient pressure set to 0 by default for CONSTANT
+    Patm = mp->tfmp_density_const[3];
+    rho_g = mp->tfmp_density_const[0]; // grams per cubic centimeter
+    drho_g_dP = 0.0;
+    break;
+
+  }
+  
+  /* Setup Lubrication */
+  int *n_dof = NULL;
+  int dof_map[MDE];
+  n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
+  lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
+  double det_J = fv->sdet;
+  double dA = det_J * wt * h3;
+
+  dbl grad_P[DIM], gradII_P[DIM];
+  dbl grad_S[DIM], gradII_S[DIM];
+  for (k = 0; k<DIM; k++) {
+    grad_P[k] = fv->grad_tfmp_pres[k];
+    grad_S[k] = fv->grad_tfmp_sat[k];
+  }
+  Inn(grad_P, gradII_P);
+  Inn(grad_S, gradII_S);
+
+  //Artificial diffusion constant
+  dbl D, Scd, betad, md, cd, Krd, dKrd_dS;
+
+  switch (mp->tfmp_diff_model) {
+  case CONSTANT:
+    D = mp->tfmp_diff_const[0];
+    Krd = 0.0;
+    dKrd_dS = 0.0;
+    break;
+
+  case PIECEWISE:
+    D = mp->tfmp_diff_const[0];
+    // diffusion transition
+    Scd = mp->tfmp_diff_const[1];
+    betad = mp->tfmp_diff_const[2];
+    md = 1.f/2.f/betad;
+    cd = -md*(Scd - betad);
+  
+    if ( S < Scd - betad) {
+      Krd = 0.0;
+      dKrd_dS = 0.0;
+    } else {
+      Krd = md*S + cd;
+      dKrd_dS = md;
+    }
+    break;
+
+  default:
+    D = 0.0;
+    Krd = 0.0;
+    dKrd_dS = 0.0;
+    break;
+  }
+
+  //  rel perms
+  dbl Krl;
+  dbl dKrl_dS;
+    
+  dbl Krg;
+  dbl dKrg_dS;
+
+  // gas transition
+  dbl Scg, alphag, Scl, alphal;
+  switch (mp->tfmp_rel_perm_model) {
+  case PIECEWISE:
+    Scg = mp->tfmp_rel_perm_const[0];
+    alphag = mp->tfmp_rel_perm_const[1];
+    Scl = mp->tfmp_rel_perm_const[2];
+    alphal = mp->tfmp_rel_perm_const[3];
+    break;
+  case LEVER:
+    Scg = 0.5;
+    alphag = 0.5;
+    Scl = 0.5;
+    alphal = 0.5;
+    break;
+  default:
+    WH(-1, "relative permeability model not set");
+    return -1;
+    break;
+  }
+    
+  dbl mg = -1./2./alphag;
+  dbl cg = -mg*(Scg + alphag);
+  dbl ml = 1./2./alphal;
+  dbl cl = -ml*(Scl - alphal);
+  
+  if ( S <= Scg - alphag) {
+    Krg = 1.0;
+    dKrg_dS = 0.0;
+  } else if ( S > Scg - alphag && S < Scg + alphag ) {
+    Krg = mg*S + cg;
+    dKrg_dS = mg;
+  } else {
+    Krg = 0.0;
+    dKrg_dS = 0.0;
+   }
+
+  // liquid transition
+
+  if ( S <= Scl - alphal) {
+    Krl = 0.0;
+    dKrl_dS = 0.0;
+  } else if ( S > Scl - alphal && S < Scl + alphal ) {
+    Krl = ml*S + cl;
+    dKrl_dS = ml;
+    
+  } else { // S > 1.0
+    Krl = 1.0 ;
+    dKrl_dS = 0.0;
+  }
+  
+  /* Use the height_function_model */
+  double h, H_U, dH_U_dtime, H_L, dH_L_dtime;
+  double dH_U_dX[DIM],dH_L_dX[DIM], dH_U_dp, dH_U_ddh;
+  h = height_function_model(&H_U, &dH_U_dtime, &H_L, &dH_L_dtime,
+				 dH_U_dX, dH_L_dX, &dH_U_dp, &dH_U_ddh, time, delta_t);
+
+  double dh_dtime = dH_U_dtime - dH_L_dtime;
+  /* Need gradII_(Sh) */
+  double grad_h[DIM], gradII_h[DIM];
+  for (k=0; k<DIM; k++) {
+    grad_h[k] = dH_U_dX[k] - dH_L_dX[k];
+  }
+
+  Inn(grad_h, gradII_h);
+
+  dbl J, dJ_dP, dJ_dS, fS, dfS_dS, bg, dbg_dP, trans_diss, sqrtPI, L;
+  dbl Dgl, Hgls;
+  //  dbl dJ_dh, dL_dh;
+
+  switch(mp->tfmp_dissolution_model) {
+  case TFMP_SQUARE:
+
+    // Diffusion Coefficient of gas species in liquid solvent
+    Dgl = mp->tfmp_dissolution_const[0];
+    // Henry's Law Constant
+    Hgls = mp->tfmp_dissolution_const[1];
+    // Molecular weight of gas 
+    Mg = mp->tfmp_dissolution_const[2];
+    
+    trans_diss = PI/4.0f;
+    sqrtPI = sqrt(PI);
+    if (S < 1.0 && S > 0.0 ) {
+
+      // dependence on saturation
+      if (S > trans_diss) {
+      
+	fS = 2.0*sqrtPI/lambda*sqrt(S);
+	dfS_dS = sqrtPI/lambda/sqrt(S);
+	L = sqrt(Vd/PI/h);
+	//      dL_dh = -sqrt(Vd/PI/h*h*h)/2.0;
+	
+      } else {
+	fS = 4.0/lambda*sqrt(1.0-S);
+	dfS_dS = -4.0/lambda/2.0/sqrt(1.0-S);
+	if (Vd/lambda/lambda/h >= 1.0) { // Length is maxed for lattice defined by
+	  // Vd and lambda
+	  L = lambda/sqrt(2.0);
+	  //	dL_dh = 0.0;
+	} else {
+	  L = lambda/sqrt(2.0)*(1.0 - sqrt((1.0-Vd/lambda/lambda/h)/2.0));
+	  //	dL_dh = lambda/2.0/sqrt(2.0*(1.0-Vd/lambda/lambda/h))*Vd/lambda/lambda/h/h;
+	}
+      }
+
+      //Concentration of gas at interface moles/cm^3
+      bg = (fv->tfmp_pres - Patm)*Hgls;
+      dbg_dP = Hgls;
+
+    } else {
+      fS = 0.0;
+      dfS_dS = 0.0;
+      L = 1.0;
+      //    dL_dh = 0.0;
+      bg = 0.0;
+      dbg_dP= 0.0;
+      J = 0.0;
+      dJ_dP = 0.0;
+      dJ_dS = 0.0;
+    }
+    J = h*Dgl*Mg*bg*fS/L;
+    dJ_dP = h*Dgl*Mg*dbg_dP*fS/L;
+    dJ_dS = h*Dgl*Mg*bg*dfS_dS/L;
+    
+    break;
+  default:
+    J = 0.0;
+    dJ_dP = 0.0;
+    dJ_dS = 0.0;
+    break;
+  }
+
+  int mass_lumping = mp->tfmp_mass_lump;
+  int clipping = mp->tfmp_clipping;
+  dbl clip_strength = mp->tfmp_clip_strength;
+
+  /* allocate for various dot products */
+  double gradS_dot_gradphi_i, gradphi_i_dot_gradphi_j;
+  double gradP_dot_gradphi_i, gradP_dot_gradphi_j;
+  double gradP_dot_gradP, gradP_dot_gradh, gradh_dot_gradphi_j;
+
+
+  if ( af->Assemble_Residual ) {
+    /* Assemble liquid volume conservation equation */
+    eqn = R_TFMP_MASS;
+    peqn = upd->ep[eqn];
+    etm_mass_eqn = pd->etm[eqn][(LOG2_MASS)];      //
+    etm_adv_eqn = pd->etm[eqn][(LOG2_ADVECTION)];  //
+                                                   //
+    etm_diff_eqn = pd->etm[eqn][(LOG2_DIFFUSION)]; //
+                                                   //
+    /* Loop over DOF (i) */   
+    for(i = 0; i < ei->dof[eqn]; i++) {
+      ShellBF(eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map);
+
+      /* Assemble mass term */
+      mass = 0.0;
+      if( T_MASS ) {
+	if (mass_lumping == 1) {
+	  mass += phi_i*h*(*esp_dot->tfmp_sat[i]);
+	} else {
+	  mass += phi_i*h*fv_dot->tfmp_sat;
+	}
+      	mass *= dA * etm_mass_eqn;
+      }
+      /* Assemble advection term */
+      adv = 0.0;
+      if ( T_ADVECTION ) {
+	adv += phi_i*S*dh_dtime;
+      	adv *= dA * etm_adv_eqn;
+      }
+      /* Assemble diffusion term */
+      diff = 0.0;
+      gradP_dot_gradphi_i = 0.0;
+      gradS_dot_gradphi_i = 0.0;
+
+      if( T_DIFFUSION ) {
+      	for ( k = 0; k<DIM; k++) {
+	  gradP_dot_gradphi_i += gradII_P[k]*gradII_phi_i[k];
+	  gradS_dot_gradphi_i += gradII_S[k]*gradII_phi_i[k];
+
+      	}
+	// phi_i*div( -h^2/12/mu_l grad(P)) = -grad(phi_i)dot(-h^2/12/mu_l*grad(P)) + grad(phi_i*-h^2/12/mu_l*grad(P))
+	diff += h*h*h/12.0/mu_l*Krl*gradP_dot_gradphi_i;
+
+	// -phi_i*h*D*krd*laplacian(S)
+	diff += h*D*Krd*gradS_dot_gradphi_i;
+	
+      	diff *= dA*etm_diff_eqn;
+      }
+      lec->R[peqn][i] += mass + adv + diff;
+    }
+
+    /* Assemble the gas volume conservation equation */
+    eqn = R_TFMP_BOUND;
+    peqn = upd->ep[eqn];
+    etm_mass_eqn = pd->etm[eqn][(LOG2_MASS)]; //
+    etm_adv_eqn = pd->etm[eqn][(LOG2_ADVECTION)]; //
+    etm_diff_eqn = pd->etm[eqn][(LOG2_DIFFUSION)]; //
+    etm_source_eqn = pd->etm[eqn][(LOG2_SOURCE)]; //
+
+    /* Loop over DOF (i) */
+    for(i = 0; i < ei->dof[eqn]; i++) {
+      ShellBF(eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map);
+
+      /* Assemble mass term */
+      mass = 0.0;
+
+      if( T_MASS ) {
+
+	if (mp->tfmp_density_model == CONSTANT) {
+	  mass += phi_i*(1.0-S)*dh_dtime;
+
+	  if (mass_lumping == 1) {
+	    mass += -phi_i*h*(*esp_dot->tfmp_sat[i]);
+	  } else {
+	    mass += -phi_i*h*fv_dot->tfmp_sat;
+	  }
+	} else {
+
+	  if (mass_lumping == 1) {
+	    mass += (phi_i
+		     *(h*(1.0-S)*drho_g_dP*(*esp_dot->tfmp_pres[i])
+		       + rho_g*(1.-S)*dh_dtime
+		       - rho_g*h*(*esp_dot->tfmp_sat[i])
+		       )
+		     );
+	  } else {
+	    mass += (phi_i
+		     *(h*(1.0-S)*drho_g_dP*fv_dot->tfmp_pres
+		       + rho_g*(1.-S)*dh_dtime
+		       - rho_g*h*fv_dot->tfmp_sat
+		       )
+		     );
+	  }
+	  if (S > 1.0 && clipping == 1) {
+	    mass = 0.0;
+	    if (mass_lumping == 1) {
+	      mass += -phi_i*h*(*esp_dot->tfmp_sat[i]);
+	    } else {
+	      mass += -phi_i*h*fv_dot->tfmp_sat;
+	    }
+	  }
+	}
+      }
+      /* Assemble advection term */
+
+      adv = 0.0;      
+      if ( T_ADVECTION ) {
+	gradP_dot_gradphi_i = 0.0;
+	for ( k = 0; k<DIM; k++) {
+	  gradP_dot_gradphi_i += gradII_P[k]*gradII_phi_i[k];
+	}
+
+	if (mp->tfmp_density_model == CONSTANT) {
+	  adv += gradP_dot_gradphi_i*h*h*h*Krg/12.0/mu_g;
+	} else {
+	  adv += gradP_dot_gradphi_i*rho_g*h*h*h/12.0/mu_g*Krg;
+	}
+	if (S > 1.0 && clipping == 1) {
+	  adv = 0.0;
+	  adv += phi_i*clip_strength*(1.0-S)*(1.0-S)*dh_dtime;
+	}
+      }
+      /* Assemble diffusion term */
+      diff = 0.0;
+      if( T_DIFFUSION ) {
+	//diff += phi_i;
+      }
+
+      source = 0.0;
+      if ( T_SOURCE ) {
+	source += phi_i*J;
+      }
+      if (S >= 1.0 && clipping == 1) {
+	source = 0.0;
+      }
+
+      mass *= dA * etm_mass_eqn;
+      adv *= dA * etm_adv_eqn;
+      diff *= dA * etm_diff_eqn;
+      source *= dA * etm_source_eqn;
+      
+      lec->R[peqn][i] += mass + adv + diff + source;
+    }
+  }
+
+
+  /* Assemble sensitivities of R_TFMP_MASS */
+  eqn = R_TFMP_MASS;
+  if (af->Assemble_Jacobian) {
+    peqn = upd->ep[eqn];
+    etm_mass_eqn = pd->etm[eqn][(LOG2_MASS)];
+    etm_adv_eqn = pd->etm[eqn][(LOG2_ADVECTION)];
+    etm_diff_eqn = pd->etm[eqn][(LOG2_DIFFUSION)];
+    // Loop over DOF (i)
+    for ( i = 0; i < ei->dof[eqn]; i++) { /* The sensitivities of R_TFMP_MASS to TFMP_PRES and TFMP_SAT */
+      // Load basis functions
+      ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+      // Assemble sensitivities for TFMP_PRES
+      //for (l = 0; l<DIM; l++) {
+      var = TFMP_PRES;
+      if (pd->v[var]) {
+	pvar = upd->vp[var];
+	// Loop over DOF (j)
+	for ( j = 0; j < ei->dof[var]; j++) {
+	  // Load basis functions
+	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+	  
+	  // Assemble mass term
+	  mass = 0.0;
+	  if ( T_MASS ) {
+	  }
+
+	  // Assemble advection term
+	  adv = 0.0;
+
+	  if ( T_ADVECTION ) {
+	  }
+	  // Assemble diffusion term
+	  diff = 0.0;
+	  gradphi_i_dot_gradphi_j = 0.0;
+	  if ( T_DIFFUSION ) {
+	    for (k=0; k<DIM; k++) {
+	      gradphi_i_dot_gradphi_j += gradII_phi_i[k]*gradII_phi_j[k];
+	    }
+	    diff += h*h*h/12.0/mu_l*Krl*gradphi_i_dot_gradphi_j;
+	  }
+	  diff *= etm_diff_eqn;
+	  
+	  // Assemble full Jacobian
+	  lec->J[peqn][pvar][i][j] += dA*(mass + adv + diff);
+	  
+	} // End of loop over DOF (j)
+	  
+      }// End of R_TFMP_MASS sensitivities to TFMP_PRES
+      
+      // Assemble sensitivities for TFMP_SAT
+      var = TFMP_SAT;
+      if (pd->v[var]) {
+      	pvar = upd->vp[var];
+      	// Loop over DOF (j)
+      	for ( j = 0; j < ei->dof[var]; j++) {
+	  // Load basis functions
+	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+
+	  // Assemble mass term
+	  mass = 0.0;
+	  
+	  if( T_MASS ) {
+	    if (mass_lumping == 1) {
+	      if (i == j) {
+		mass += phi_i*h*(1.0+2.0*tt)/delta_t;
+	      }
+	    } else {
+	      mass += phi_i*phi_j*h*((1.0+2.0*tt)/delta_t);
+	    }
+	    mass *= etm_mass_eqn;
+	  }
+	  // Assemble advection term
+	  adv = 0.0;
+
+	  if ( T_ADVECTION ) {
+	    adv += phi_i*phi_j*dh_dtime;
+	    
+	    adv *= etm_adv_eqn;
+	  }
+	  // Assemble diffusion term
+	  diff = 0.0;
+	  gradP_dot_gradphi_i = 0.0;
+	  gradS_dot_gradphi_i = 0.0;
+	  gradphi_i_dot_gradphi_j = 0.0;
+	  if ( T_DIFFUSION ) {
+	    for (k=0; k<DIM; k++) {
+	      gradP_dot_gradphi_i += gradII_P[k]*gradII_phi_i[k];
+	      gradS_dot_gradphi_i += gradII_S[k]*gradII_phi_i[k];
+	      gradphi_i_dot_gradphi_j += gradII_phi_i[k]*gradII_phi_j[k];
+	    }
+	    diff += h*h*h*phi_j/12.0/mu_l*dKrl_dS*gradP_dot_gradphi_i;
+
+	    //artificial diffusion S
+	    // phi_i*D*krd*del^2(P)
+	    diff += h*D*Krd*gradphi_i_dot_gradphi_j
+	      + h*D*dKrd_dS*phi_j*gradS_dot_gradphi_i;
+
+	    diff *= etm_diff_eqn;
+	  }
+	  // Assemble full Jacobian
+	  lec->J[peqn][pvar][i][j] += dA*(mass + adv + diff);
+      	} // End of loop over DOF (j)
+      }// End of R_TFMP_MASS sensitivities to TFMP_SAT
+    } // End of loop over DOF (i)
+  }  // End of Sensitivities of R_TFMP_MASS
+
+  /* Assemble sensitivities of R_TFMP_BOUND */
+  eqn = R_TFMP_BOUND;
+  if (af->Assemble_Jacobian) {
+    peqn = upd->ep[eqn];
+    etm_mass_eqn = pd->etm[eqn][(LOG2_MASS)];
+    etm_adv_eqn = pd->etm[eqn][(LOG2_ADVECTION)];
+    etm_diff_eqn = pd->etm[eqn][(LOG2_DIFFUSION)];
+    etm_source_eqn = pd->etm[eqn][(LOG2_SOURCE)]; //
+    // Loop over DOF (i)
+    for ( i = 0; i < ei->dof[eqn]; i++) { /* The sensitivities of R_TFMP_BOUND to TFMP_SAT and TFMP_PRES*/
+      // Load basis functions
+      ShellBF( eqn, i, &phi_i, grad_phi_i, gradII_phi_i, d_gradII_phi_i_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+      
+      // Assemble sensitivities for TFMP_PRES
+      var = TFMP_PRES;
+      if (pd->v[var]) {
+	pvar = upd->vp[var];
+	// Loop over DOF (j)
+	for ( j = 0; j < ei->dof[var]; j++) {
+	  // Load basis functions
+	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+	  
+	  // Assemble mass term
+	  mass = 0.0;
+	  if ( T_MASS ) {
+	    if (mp->tfmp_density_model == CONSTANT) {
+	      
+	    } else {
+	      
+	      if (mass_lumping == 1) {
+		mass += (phi_i
+			 *(h*(1.0-S)*drho_g_dP*delta(i,j)*((1.0+2.0*tt)/delta_t)
+			   + drho_g_dP*phi_j*(1.0-S)*dh_dtime
+			   - drho_g_dP*h*(*esp_dot->tfmp_sat[i])
+			   )
+			 );
+	      } else {
+		mass += (phi_i
+			 *(h*(1.0-S)*drho_g_dP*phi_j*((1.0+2.0*tt)/delta_t)
+			   + drho_g_dP*phi_j*(1.0-S)*dh_dtime
+			   - drho_g_dP*phi_j*h*fv_dot->tfmp_sat
+			   )
+			 );
+	      }
+	    }
+	    if (S >= 1.0 && clipping) {
+	      mass = 0.0;
+	    }
+	    
+	    mass *= etm_mass_eqn;
+	  }
+	  //mass *= dA * etm_mass_eqn;
+	  // Assemble advection term
+	  adv = 0.0;
+	  gradP_dot_gradh = 0.0;
+	  gradh_dot_gradphi_j = 0.0;
+	  gradP_dot_gradphi_j = 0.0;
+	  gradP_dot_gradphi_i = 0.0;
+	  gradphi_i_dot_gradphi_j = 0.0;
+
+	  if ( T_ADVECTION ) {
+	    for (k=0; k<DIM; k++) {
+	      gradP_dot_gradh += gradII_P[k]*gradII_h[k];
+	      gradh_dot_gradphi_j += gradII_h[k]*gradII_phi_j[k];
+	      gradP_dot_gradphi_j += gradII_P[k]*gradII_phi_j[k];
+	      gradP_dot_gradphi_i += gradII_P[k]*gradII_phi_i[k];
+	      gradphi_i_dot_gradphi_j += gradII_phi_i[k]*gradII_phi_j[k];
+	    }
+	    if (mp->tfmp_density_model == CONSTANT) {
+	      adv += gradphi_i_dot_gradphi_j*h*h*h/12.0/mu_g*Krg;
+	    } else {
+	      adv += h*h*h/12.0/mu_g*Krg
+		*(gradP_dot_gradphi_i*drho_g_dP*phi_j
+		  + gradphi_i_dot_gradphi_j*rho_g		 
+		  );
+	    }
+	    if (S >= 1.0 && clipping) {
+	      adv = 0.0;
+	    }
+	    adv *= etm_adv_eqn;
+	  }
+	  // Assemble diffusion term
+	  diff = 0.0;
+	  if ( T_DIFFUSION ) {
+	    
+	  }
+
+	  source = 0.0;
+	  if ( T_SOURCE ) {
+	    source += phi_i*phi_j*dJ_dP;
+	  }
+	  if (S >= 1.0 && clipping == 1) {
+	    source = 0.0;
+	  }
+	  source *= etm_source_eqn;
+
+	  // Assemble full Jacobian
+	  lec->J[peqn][pvar][i][j] += dA*(mass + adv + diff + source);
+	  
+	} // End of loop over DOF (j)
+	  
+      }// End of R_TFMP_BOUND sensitivities to TFMP_PRES
+
+      
+      // Assemble sensitivities for TFMP_SAT
+      var = TFMP_SAT;
+      if (pd->v[var]) {
+	pvar = upd->vp[var];
+	// Loop over DOF (j)
+	for ( j = 0; j < ei->dof[var]; j++) {
+	  // Load basis functions
+	  ShellBF( var, j, &phi_j, grad_phi_j, gradII_phi_j, d_gradII_phi_j_dmesh, n_dof[MESH_DISPLACEMENT1], dof_map );
+	  // Assemble mass term
+	  mass = 0.0;
+	  if( T_MASS ) {
+	    if (mp->tfmp_density_model == CONSTANT) {
+	      mass += -phi_i*phi_j*dh_dtime;
+
+	      if (mass_lumping == 1) {
+		mass += -phi_i*h*delta(i,j)*((1.0+2.0*tt)/delta_t);
+	      } else {
+		mass += -phi_i*h*phi_j*((1.0+2.0*tt)/delta_t);
+	      }
+
+	    } else { 
+	      if (mass_lumping == 1) {
+		mass += (phi_i
+			 *(-h*phi_j*drho_g_dP*(*esp_dot->tfmp_pres[i])
+			   - rho_g*phi_j*dh_dtime
+			   - rho_g*h*delta(i,j)*((1.0+2.0*tt)/delta_t)
+			   )
+			 );
+	      } else {
+		mass += (phi_i
+			 *(-h*phi_j*drho_g_dP*fv_dot->tfmp_pres
+			   - rho_g*phi_j*dh_dtime
+			   - rho_g*h*phi_j*((1.0+2.0*tt)/delta_t)
+			   )
+			 );
+	      }
+	    }
+	    if (S >= 1.0 && clipping == 1) {
+	      mass = 0.0;
+	      if (mass_lumping == 1) {
+		mass += -phi_i*h*delta(i,j)*((1.0+2.0*tt)/delta_t);
+	      } else {
+		mass += -phi_i*h*phi_j*((1.0+2.0*tt)/delta_t);
+	      }
+	    } 
+	  }
+	  mass *= etm_mass_eqn;
+	  // Assemble advection term
+	  adv = 0.0;
+	  gradP_dot_gradh = 0.0;
+	  gradP_dot_gradP = 0.0;
+	  gradP_dot_gradphi_i = 0.0;
+
+	  if ( T_ADVECTION  ) {
+	    for ( k = 0; k < DIM ; k++) {
+	      gradP_dot_gradh += gradII_P[k]*gradII_h[k];
+	      gradP_dot_gradP += gradII_P[k]*gradII_P[k];
+	      gradP_dot_gradphi_i += gradII_P[k]*gradII_phi_i[k];
+	    }
+	    if (mp->tfmp_density_model == CONSTANT) {
+	      adv += gradP_dot_gradphi_i*h*h*h/12.0/mu_g*dKrg_dS*phi_j;
+	    } else {
+	      adv += h*h*h/12.0/mu_g*rho_g*gradP_dot_gradphi_i*dKrg_dS*phi_j;
+	    }
+	    if (S >= 1.0 && clipping == 1) {
+	      adv = 0.0;
+	      adv += -phi_i*clip_strength*(2.0*(1.0-S))*phi_j*dh_dtime;
+	    }
+	    adv *= etm_adv_eqn;
+	  }
+	  // Assemble diffusion term
+	  diff = 0.0;
+	  if ( T_DIFFUSION ) {
+
+	  }
+
+	  // Assemble source term
+	  source = 0.0;
+	  if ( T_SOURCE ) {
+	    source += phi_i*phi_j*dJ_dS;
+	  }
+	  if (S >= 1.0 && clipping == 1) {
+	    source = 0.0;
+	  }
+	  source *= etm_source_eqn;
+	  // Assemble full Jacobian
+	  lec->J[peqn][pvar][i][j] += dA*(mass + adv + diff + source);
+	  
+	} // End of loop over DOF (j)
+      }// End of R_TFMP_BOUND sensitivities to TFMP_SAT
+      
+    } // End of loop over DOF (i)
+  } // End of Sensitivites of R_TFMP_BOUND
+
+  safe_free((void *) n_dof);
+  return(0);
+
+} 
+/* End of assemble_shell_tfmp() */
+
 
 /* End of mm_fill_shell.c */

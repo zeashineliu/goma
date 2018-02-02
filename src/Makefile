@@ -132,6 +132,21 @@ DEFINES ?= -Dlinux \
 #          -DLIBRARY_MODE \
 #          -DUSE_CHEMKIN -DSENKIN_OUTPUT -DDEBUG_HKM \
 
+# Git Version information
+# check for executable
+HAS_GIT := $(shell command -v git 2> /dev/null)
+
+
+
+ifdef HAS_GIT
+	GIT_VERSION=$(shell git describe --dirty --always --tags 2> /dev/null)
+
+ifneq "$(GIT_VERSION)" ""
+	VERSION = -DGIT_VERSION=\"$(GIT_VERSION)\"
+endif
+
+endif
+
 # External Libraries
 # ==================
 
@@ -154,7 +169,7 @@ LD_LIBRARY_PATH := $(GCC_LIB64):$(GCC_LIB):${LD_LIBRARY_PATH}
 # If built with build-goma-dependencies.sh, includes flags for SEACAS, UMFpack, and all other necessary
 # libraries and includes otherwise not listed below.
 
-TRILINOS_TOP ?= $(GOMA_LIBS)/trilinos-11.8.1-Built
+#TRILINOS_TOP ?= $(GOMA_LIBS)/trilinos-11.8.1-Built
 
 include $(TRILINOS_TOP)/include/Makefile.export.Trilinos
 
@@ -235,7 +250,7 @@ F_WARN_FLAGS ?=
 FFLAGS = $(CCFLAGS) $(F_WARN_FLAGS) $(DEFINES) $(INCLUDES)
 
 # C compiler flags
-CFLAGS = $(CCFLAGS) $(C_WARN_FLAGS) $(DEFINES) $(INCLUDES)
+CFLAGS = $(CCFLAGS) $(C_WARN_FLAGS) $(DEFINES) $(VERSION) $(INCLUDES)
 
 # C++ compiler flags
 CXXSTD ?= 
@@ -429,7 +444,8 @@ SL_SRC= sl_lu.c\
         sl_leastsquares.C \
         sl_epetra_interface.cpp \
         sl_epetra_util.cpp \
-        sl_aztecoo_interface.cpp
+        sl_aztecoo_interface.cpp \
+        sl_stratimikos_interface.cpp
 
 SL_INC= spConfig.h\
         spDefs.h\
@@ -446,7 +462,8 @@ SL_INC= spConfig.h\
         sl_rcm.h \
         sl_epetra_interface.h \
         sl_epetra_util.h \
-        sl_aztecoo_interface.h
+        sl_aztecoo_interface.h \
+        sl_stratimikos_interface.h
 
 
 # _____	Machine dependent routines "md_" prefix _______________________________
@@ -692,8 +709,8 @@ PREFIX_INC = $(PREFIX)/include
 # ============
 
 # Object files depend on includes and the makefile
-$(RELEASE_OBJS) = $(GOMA_INCS) $(MAKEFILE_NAME) $(USER_SETTINGS_FILE)
-$(DEBUG_OBJS) = $(GOMA_INCS) $(MAKEFILE_NAME) $(USER_SETTINGS_FILE)
+RELEASE_DEPENDS = $(GOMA_INCS) $(MAKEFILE_NAME) $(USER_SETTINGS_FILE)
+DEBUG_DEPENDS = $(GOMA_INCS) $(MAKEFILE_NAME) $(USER_SETTINGS_FILE)
 
 # Main targets
 # ------------
@@ -740,38 +757,38 @@ $(BIN_DIR)/$(DEBUG_TARGET): $(GOMA_DEBUG_OBJS) $(BRKFIX_DEBUG_OBJS) $(USER_DEBUG
 
 # release objects
 
-$(RELEASE_OBJ_DIR)/%.o: %.c
+$(RELEASE_OBJ_DIR)/%.o: %.c $(RELEASE_DEPENDS)
 	@mkdir -p $(RELEASE_OBJ_DIR)/$(BRKFIX_DIR)
-	$(CC) -c $(CFLAGS) -o $@ $^
+	$(CC) -c $(CFLAGS) -o $@ $<
 
-$(RELEASE_OBJ_DIR)/%.o: %.F
+$(RELEASE_OBJ_DIR)/%.o: %.F $(RELEASE_DEPENDS)
 	@mkdir -p $(RELEASE_OBJ_DIR)
-	$(FC) -c $(FFLAGS) -o $@ $^
+	$(FC) -c $(FFLAGS) -o $@ $<
 
-$(RELEASE_OBJ_DIR)/%.o: %.C
+$(RELEASE_OBJ_DIR)/%.o: %.C $(RELEASE_DEPENDS)
 	@mkdir -p $(RELEASE_OBJ_DIR)
-	$(CXX) -c $(CXXFLAGS) -o $@ $^
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
-$(RELEASE_OBJ_DIR)/%.o: %.cpp
+$(RELEASE_OBJ_DIR)/%.o: %.cpp $(RELEASE_DEPENDS)
 	@mkdir -p $(RELEASE_OBJ_DIR)
-	$(CXX) -c $(CXXFLAGS) -o $@ $^
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
 # debug objects
-$(DEBUG_OBJ_DIR)/%.o: %.c
+$(DEBUG_OBJ_DIR)/%.o: %.c $(DEBUG_DEPENDS)
 	@mkdir -p $(DEBUG_OBJ_DIR)/$(BRKFIX_DIR)
-	$(CC) -c $(CFLAGS) -o $@ $^
+	$(CC) -c $(CFLAGS) -o $@ $<
 
-$(DEBUG_OBJ_DIR)/%.o: %.F
+$(DEBUG_OBJ_DIR)/%.o: %.F $(DEBUG_DEPENDS)
 	@mkdir -p $(DEBUG_OBJ_DIR)
-	$(FC) -c $(FFLAGS) -o $@ $^
+	$(FC) -c $(FFLAGS) -o $@ $<
 
-$(DEBUG_OBJ_DIR)/%.o: %.C
+$(DEBUG_OBJ_DIR)/%.o: %.C $(DEBUG_DEPENDS)
 	@mkdir -p $(DEBUG_OBJ_DIR)
-	$(CXX) -c $(CXXFLAGS) -o $@ $^
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
-$(DEBUG_OBJ_DIR)/%.o: %.cpp
+$(DEBUG_OBJ_DIR)/%.o: %.cpp $(DEBUG_DEPENDS)
 	@mkdir -p $(RELEASE_OBJ_DIR)
-	$(CXX) -c $(CXXFLAGS) -o $@ $^
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
 
 

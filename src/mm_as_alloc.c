@@ -1125,6 +1125,11 @@ assembly_alloc(Exo_DB *exo)
     esp->sh_K = (dbl **) alloc_ptr_1(MDE);
   }
 
+  if (Num_Var_In_Type[SHELL_CURVATURE2]) {
+    esp->sh_K2 = (dbl **) alloc_ptr_1(MDE);
+  }
+
+
   if (Num_Var_In_Type[SHELL_TENSION]) {
     esp->sh_tens = (dbl **) alloc_ptr_1(MDE);
   }
@@ -1262,6 +1267,13 @@ assembly_alloc(Exo_DB *exo)
   /* Poynting Vector  */
   if (Num_Var_In_Type[LIGHT_INTP] || Num_Var_In_Type[LIGHT_INTM] || Num_Var_In_Type[LIGHT_INTD]) {
     esp->poynt = (dbl ***) alloc_ptr_2(vim, MDE);
+  }
+
+  if(Num_Var_In_Type[TFMP_PRES]) {
+    esp->tfmp_pres = (dbl **) alloc_ptr_1(MDE);
+  }
+  if(Num_Var_In_Type[TFMP_SAT]) {
+    esp->tfmp_sat = (dbl **) alloc_ptr_1(MDE);
   }
 
   if(Num_Var_In_Type[SHELL_SHEAR_TOP]) {
@@ -1479,7 +1491,8 @@ assembly_alloc(Exo_DB *exo)
 	mp_glob[mn]->PorousMediaType == POROUS_UNSATURATED || 
 	mp_glob[mn]->PorousMediaType == POROUS_TWO_PHASE ||
 	mp_glob[mn]->PorousMediaType == POROUS_SHELL_UNSATURATED) {
-      if (mp_glob[mn]->Porous_Mass_Lump) {
+      if ( (mp_glob[mn]->Porous_Mass_Lump) ||
+           (mp_glob[mn]->PorousMediaType == POROUS_SHELL_UNSATURATED) ) {
 	pmv_ml = alloc_struct_1(PMV_ML_STRUCT, 1);
       }
       break;

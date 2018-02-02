@@ -35,11 +35,11 @@
 #define HAVE_UMFPACK 1
 #define HAVE_AZTEC 1
 /* Trilinos now seems to define these */
-#ifndef HAVE_BLAS
-  #define HAVE_BLAS 1
+#ifndef GOMA_HAVE_BLAS
+  #define GOMA_HAVE_BLAS 1
 #endif
-#ifndef HAVE_LAPACK
-  #define HAVE_LAPACK 1
+#ifndef GOMA_HAVE_LAPACK
+  #define GOMA_HAVE_LAPACK 1
 #endif
 #define HAVE_Y12M 1
 
@@ -55,7 +55,13 @@
 #endif /* HAVE_CONFIG_H */
 
 #ifndef VERSION
-#define VERSION "6.0.0"
+
+  #ifdef GIT_VERSION
+    #define VERSION GIT_VERSION
+  #else
+    #define VERSION "6.0.0"
+  #endif
+
 #endif
 
 /*****************************************************************************/
@@ -233,6 +239,10 @@
 #ifndef DBL_MAX
 #define DBL_MAX 1.0E300
 #endif
+/* finite difference stepsize  */
+#ifndef FD_FACTOR
+#define FD_FACTOR 1.0E-05
+#endif
 
 /*
  * This definition has a result of true if the double precision argument is
@@ -364,10 +374,12 @@ typedef int MPI_Aint;
 
 #ifdef PARALLEL
 #  define DPRINTF if ( ProcID == 0 ) fprintf
+#  define DFPUTS if ( ProcID == 0 ) fputs
 #  define P0PRINTF if (ProcID == 0) printf
 #else
 #  define DPRINTF fprintf
 #  define P0PRINTF printf
+#  define DFPUTS fputs
 #endif
 
 
@@ -528,8 +540,15 @@ extern int zero_detJ_global;
  * versus 6 issue.)  This is not needed if goma is compiled with autoconf.
  * (Eric Benner 8/6/09)
  */ 
+
 #ifndef VERSION
-#define VERSION "6.0.0"
+
+  #ifdef GIT_VERSION
+    #define VERSION GIT_VERSION
+  #else
+    #define VERSION "6.0.0"
+  #endif
+
 #endif
 
 #endif

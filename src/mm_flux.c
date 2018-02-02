@@ -106,16 +106,12 @@ evaluate_flux(
 			  const int print_flag)     /*  flag for printing results,1=print*/
 			  {
   int j;			/* local index loop counter                 */
-  int i;			/* Index for the local node number - row    */
+  int i, r;			/* Index for the local node number - row    */
   int ip = 0, a, b, c, p, w = -1;
   int mn;
   int var;
   int *n_dof=NULL;
   int dof_map[MDE];
-  dbl H_lub; 
-  dbl H_U, dH_U_dtime, H_L, dH_L_dtime;
-  dbl dH_U_dX[DIM],dH_L_dX[DIM];
-  dbl dH_U_dp, dH_U_ddh;
   dbl base_normal[DIM];
 
   double wt,weight;
@@ -125,6 +121,7 @@ evaluate_flux(
   int num_local_nodes, iconnect_ptr, dim, ielem_dim, current_id;
   int nset_id, sset_id;
   double Tract[DIM], Torque[DIM], local_Torque[DIM];
+  double Mag_real[DIM], Mag_imag[DIM], E_real[DIM], E_imag[DIM];
 
   /* 
    * Variables for vicosity and derivative 
@@ -696,17 +693,52 @@ evaluate_flux(
   			memset( ves, 0, sizeof(dbl)*DIM*DIM);
   			if ( pd->v[POLYMER_STRESS11] )
     			  {
-			    for ( a=0; a<VIM; a++)
-        	              {
-			        for ( b=0; b<VIM; b++)
-            			   {
-			             for ( ve_mode=0; ve_mode<vn->modes; ve_mode++)
-                		       {
-                  			ves[a][b] += fv->S[ve_mode][a][b];
-                			}
-            			   }
-        		      }
-    			   }
+                            dbl log_c[DIM][DIM];
+                            dbl exp_s[DIM][DIM];
+                            dbl R1[DIM][DIM];
+                            dbl eig_values[DIM];
+		            dbl mup = 0.;
+ 			    dbl lambda = 0.;
+                            if(vn->evssModel==LOG_CONF)
+                              {
+                                for ( ve_mode=0; ve_mode < vn->modes; ve_mode++)
+                                  {
+			            for (p=0; p<VIM; p++)
+			              {
+			                for (r=0; r<VIM; r++)
+				          {
+				            log_c[p][r] = fv->S[ve_mode][p][r];
+			                  }
+				      }
+				    compute_exp_s(log_c, exp_s, eig_values, R1);
+		                    mup = viscosity(ve[ve_mode]->gn, gamma, NULL);
+			            if(ve[ve_mode]->time_constModel == CONSTANT)
+				      {
+				        lambda = ve[ve_mode]->time_const;
+			              }
+				    for (a=0; a<VIM; a++)
+			              {
+				        for (b=0; b<VIM; b++)
+				          {
+				            ves[a][b] += mup/lambda*(exp_s[a][b]-(double)delta(a,b));
+					  }
+			              }
+				  }
+			      }
+		            else
+		              {
+			        for ( a=0; a<VIM; a++)
+        	                  {
+			            for ( b=0; b<VIM; b++)
+            			       {
+			                 for ( ve_mode=0; ve_mode<vn->modes; ve_mode++)
+                		           {
+                  			     ves[a][b] += fv->S[ve_mode][a][b];
+                			   }
+            			       }
+        		          }
+    			       }
+			   } // if pd->v[POLYMER_STRESS11]
 
 		/*
 		 * OK, let's simplify things by computing the viscous
@@ -1025,27 +1057,13 @@ evaluate_flux(
 		      n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
 		      lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
 
-		      H_lub = height_function_model(&H_U, &dH_U_dtime, &H_L, &dH_L_dtime, dH_U_dX, dH_L_dX, &dH_U_dp, &dH_U_ddh, time_value, 0); 
-		      switch ( mp->FSIModel ) {
-		      case FSI_MESH_CONTINUUM:
-		      case FSI_MESH_UNDEF:
-			for ( a = 0; a < dim; a++) {
-			  H_lub -= fv->snormal[a] * fv->d[a];
-			}
-			break; 
-		      case FSI_REALSOLID_CONTINUUM:
-			for ( a = 0; a < dim; a++) {
-			  H_lub -= fv->snormal[a] * fv->d_rs[a];
-			}
-			break;
-		      }
 		      /* Calculate the flow rate and its sensitivties */
 
 		      calculate_lub_q_v(R_LUBP, time_value, 0, xi, exo);
 
                       for(a=0; a<VIM; a++)
                         {
-			    local_q +=  base_normal[a]*LubAux->v_avg[a] * H_lub;
+			    local_q +=  base_normal[a]*LubAux->q[a];
                         }
                           local_flux += weight*det* local_q ;
 			  /* clean-up */
@@ -1100,13 +1118,33 @@ evaluate_flux(
 
 		    case SPECIES_FLUX:
 
-		      Diffusivity();
+                      for (a = 0; a < VIM; a++) {
+	                if ( cr->MassFluxModel == FICKIAN  ||
+	                     cr->MassFluxModel == STEFAN_MAXWELL  ||
+	                     cr->MassFluxModel == STEFAN_MAXWELL_CHARGED  ||
+	                     cr->MassFluxModel == STEFAN_MAXWELL_VOLUME )
+	                    {
+	                     if ( Diffusivity() )  EH( -1, "Error in Diffusivity.");
 
-                      for(a=0; a<VIM; a++)
-                        {
-                          local_q += ( -mp->diffusivity[species_id]*
-                                  fv->snormal[a]*fv->grad_c[species_id][a] );
-                          local_qconv += ( fv->snormal[a]*(fv->v[a]-x_dot[a])*fv->c[species_id] );
+	                     local_q += fv->snormal[a] * 
+                               (-mp->diffusivity[species_id]*fv->grad_c[species_id][a]);
+	                    }
+	                else if ( cr->MassFluxModel == GENERALIZED_FICKIAN)
+	                    {
+	                     if ( Generalized_Diffusivity() )  EH( -1, "Error in Diffusivity.");
+	                     for (w=0; w<pd->Num_Species_Eqn; w++)
+	                       {
+	                        local_q +=  fv->snormal[a] * 
+                                           (-mp->diffusivity_gen_fick[species_id][w]
+                                              *fv->grad_c[w][a]);
+	                       }
+	                    }
+	                else  if ( cr->MassFluxModel == DARCY )
+	                    { /* diffusion induced convection is zero */ }
+	                else
+	                    { EH( -1, "Unimplemented mass flux constitutive relation."); }
+                          local_qconv += (fv->snormal[a]*(fv->v[a]-x_dot[a])
+                                         *fv->c[species_id] );
                         }
                           local_qconv = 0;
                           local_flux +=  weight*det*local_q;
@@ -1907,6 +1945,71 @@ evaluate_flux(
                               local_flux_conv += weight *det*local_qconv;
 		      break;
 
+		    case POYNTING_X:
+		    case POYNTING_Y:
+		    case POYNTING_Z:
+			/* For scalar e-field calculations, we will assume the e-vector 
+                         * points out of the plane, i.e. normal to the plane of 
+                         * incidence, Ez */
+		      R_imped = acoustic_impedance( d_R, time_value );
+		      wnum = wave_number( d_wnum, time_value );
+		      kR_inv = 1./(wnum*R_imped);
+                      memset( Mag_real,0, sizeof(double)*DIM);
+                      memset( Mag_imag,0, sizeof(double)*DIM);
+                      memset( E_real,0, sizeof(double)*DIM);
+                      memset( E_imag,0, sizeof(double)*DIM);
+		      if(pd->CoordinateSystem == PROJECTED_CARTESIAN)
+			EH(-1, "POYNTING has not been updated for the PROJECTED_CARTESIAN coordinate system.");
+
+		      if(pd->CoordinateSystem == SWIRLING || 
+			 pd->CoordinateSystem == CYLINDRICAL)
+			{
+			EH(-1, "POYNTING has not been checked for CYLINDRICAL yet.");
+			  for ( a=0; a<VIM; a++)
+			    {
+			      for ( b=0; b<VIM; b++)
+				{
+			      /*
+			       *  note that for CYLINDRICAL and SWIRLING coordinate systems
+			       * the h3 factor has been incorporated already into sdet
+			       * the moment arm is incorporated into sideset.
+			       */
+
+                                  local_q += ( fv->x[1] * e_theta[a]*
+					(vs[a][b]+ves[a][b])*fv->snormal[b] );
+
+				}
+			    }
+                                  local_flux += weight * det* local_q;
+			}
+		      else if( pd->CoordinateSystem == CARTESIAN ) 
+			{
+                          Mag_imag[0] = kR_inv*fv->grad_apr[1];
+                          Mag_imag[1] = -kR_inv*fv->grad_apr[0];
+                          Mag_real[0] = kR_inv*fv->grad_api[1];
+                          Mag_real[1] = -kR_inv*fv->grad_api[0];
+                          E_real[2] = fv->apr;  E_imag[2] = fv->api;
+			  for ( a=0; a<DIM; a++)
+			    {
+			      for ( b=0; b<DIM; b++)
+				{
+				  for ( c=0; c<DIM; c++)
+				    {
+				      local_Torque[a] += 0.5*( permute(b,c,a) *
+				(E_real[b]*Mag_real[c]-E_imag[b]*Mag_imag[c]) );
+				    }
+				}
+			    }
+			  for ( a=0; a<DIM; a++)
+			    { Torque[a] += weight * det * local_Torque[a];}
+			  local_flux = Torque[quantity-POYNTING_X];
+			}
+		      else
+			{
+			  EH(-1,"Torque cannot be calculated in this case.");
+			}
+		      break;
+		  
 		    case N_DOT_X:
 		      /* 
 		       * This is the position vector dotted into the local normal
@@ -4019,6 +4122,7 @@ evaluate_flux(
 		       if( pd->CoordinateSystem == CARTESIAN ) 
 			  {
                          local_flux += sign*mp->surface_tension*fv->stangent[0][dir];
+
  	                if( J_AC != NULL)
  		           {
 			  for( p=0; p<dim ; p++)
@@ -4034,26 +4138,31 @@ evaluate_flux(
 				    }
 				}
 			    }
- 			  var = TEMPERATURE;
- 			  
- 			  for(j=0; j<ei->dof[var]; j++)
- 			    {
-				      J_AC[ ei->gun_list[var][j] ] += 
+ 			 var = TEMPERATURE;
+			 if(pd->v[var])
+			     {
+ 			      for(j=0; j<ei->dof[var]; j++)
+ 			          {
+				   J_AC[ ei->gun_list[var][j] ] += 
                          	         sign*fv->stangent[0][dir]
 				         *dsigmadT*bf[var]->phi[j];
- 			    }
-			    var = MASS_FRACTION;
-			    if (pd->v[var]) {
-			      for (w = 0; w < pd->Num_Species_Eqn; w++) {
-				for (j = 0; j < ei->dof[var]; j++) {
+ 			          }
+ 			     }
+			 var = MASS_FRACTION;
+			 if (pd->v[var]) 
+                            {
+			     for (w = 0; w < pd->Num_Species_Eqn; w++) 
+                                {
+				for (j = 0; j < ei->dof[var]; j++) 
+                                  {
 				  gnn = ei->gnn_list[var][j];
 				  ledof = ei->lvdof_to_ledof[var][j];
 				  matIndex = ei->matID_ledof[ledof];
 				  c = Index_Solution(gnn, var, w, 0, matIndex);
 				  J_AC[c] += sign*fv->stangent[0][dir]
                                     *dsigmadC[w]*bf[var]->phi[j];
-				}
-			      }
+				  }
+			        }
 			    }
  		           }
 			}
@@ -4061,44 +4170,48 @@ evaluate_flux(
 			 pd->CoordinateSystem == CYLINDRICAL)
 			{
                          local_flux += 2*M_PIE*fv->x[1]*sign*mp->surface_tension*fv->stangent[0][dir];
- 	                if( J_AC != NULL)
+ 	                 if( J_AC != NULL)
  		           {
-			  for( p=0; p<dim ; p++)
-			    {
+			   for( p=0; p<dim ; p++)
+			     {
 			      var = MESH_DISPLACEMENT1 + p;
-
 			      if(pd->v[var])
 				{
-				  for( j=0 ; j<ei->dof[var]; j++)
-				    {
-				      J_AC[ ei->gun_list[var][j] ] += 
-                         2*M_PIE*sign*mp->surface_tension*
+				 for( j=0 ; j<ei->dof[var]; j++)
+				   {
+				    J_AC[ ei->gun_list[var][j] ] += 
+                                           2*M_PIE*sign*mp->surface_tension*
 			(fv->x[1]*fv->dstangent_dx[0][dir][p][j]+
 			delta(p,1)*bf[var]->phi[j]*fv->stangent[0][dir]);
-				    }
-				}
+				   }
+			        }
 			    }
  			  var = TEMPERATURE;
- 			  
- 			  for(j=0; j<ei->dof[var]; j++)
- 			    {
-				      J_AC[ ei->gun_list[var][j] ] += 
-                         2*M_PIE*sign*fv->x[1]*fv->stangent[0][dir]
-				*dsigmadT*bf[var]->phi[j];
- 			    }
-			    var = MASS_FRACTION;
-			    if (pd->v[var]) {
-			      for (w = 0; w < pd->Num_Species_Eqn; w++) {
-				for (j = 0; j < ei->dof[var]; j++) {
+			  if(pd->v[var])
+			      {
+ 			       for(j=0; j<ei->dof[var]; j++)
+ 			           {
+				    J_AC[ ei->gun_list[var][j] ] += 
+                                           2*M_PIE*sign*fv->x[1]*fv->stangent[0][dir]
+				           *dsigmadT*bf[var]->phi[j];
+ 			           }
+ 			      }
+			  var = MASS_FRACTION;
+			  if (pd->v[var]) 
+                              {
+			      for (w = 0; w < pd->Num_Species_Eqn; w++) 
+                                {
+				for (j = 0; j < ei->dof[var]; j++) 
+                                  {
 				  gnn = ei->gnn_list[var][j];
 				  ledof = ei->lvdof_to_ledof[var][j];
 				  matIndex = ei->matID_ledof[ledof];
 				  c = Index_Solution(gnn, var, w, 0, matIndex);
 				  J_AC[c] += 2*M_PIE*fv->x[1]*sign*fv->stangent[0][dir]
                                     *dsigmadC[w]*bf[var]->phi[j];
-				}
+				  }
+			        }
 			      }
-			    }
  		           }
 			}
 			else
@@ -4718,10 +4831,13 @@ evaluate_volume_integral(const Exo_DB *exo, /* ptr to basic exodus ii mesh infor
 
   if (quantity == I_SPECIES_SOURCE)
       { 
-      Spec_source_inventory[mn][species_id] += 0.5*sum*(delta_t+tran->delta_t);
+       if(time_value <= tran->init_time+delta_t)
+ 	    { 
+             Spec_source_inventory[mn][species_id] = sum;
+	    }	else	{
+            Spec_source_inventory[mn][species_id] += 0.5*sum*(delta_t+tran->delta_t);
+	    }
       }
-
-
   if( print_flag && ProcID == 0 )
     {
       FILE *jfp;
@@ -4848,6 +4964,7 @@ compute_volume_integrand(const int quantity, const int elem,
 	       
       break;
     case I_LUB_LOAD:
+     {
       n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
       lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
 
@@ -4858,8 +4975,25 @@ compute_volume_integrand(const int quantity, const int elem,
       /* clean-up */
       safe_free((void *) n_dof);
 
-      break; 
+      break;
+     }
+    case I_SHELL_VOLUME:
+     {
+      n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
+      lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
+      det = fv->sdet; //Different determinant since this is a shell
 
+      dbl H, H_U, dH_U_dtime, H_L, dH_L_dtime;
+      dbl dH_U_dX[DIM],dH_L_dX[DIM], dH_U_dp, dH_U_ddh;
+      H = height_function_model(&H_U, &dH_U_dtime, &H_L, &dH_L_dtime, dH_U_dX, dH_L_dX, &dH_U_dp, &dH_U_ddh, time, delta_t);
+
+      *sum += H* weight * det;
+
+      /* clean-up */
+      safe_free((void *) n_dof);
+
+      break;
+     }
     case I_SPEED:
      {
       double vsq;
@@ -4896,6 +5030,17 @@ compute_volume_integrand(const int quantity, const int elem,
         double ves[MAX_PDIM][MAX_PDIM];	/* viscoelastic stress */
         int ve_mode;
 
+  if (mp->HeatSourceModel == VISC_DISS )
+    {
+      *sum += weight*det*visc_diss_heat_source(NULL, mp->u_heat_source);
+    }
+  else if (mp->HeatSourceModel == VISC_ACOUSTIC )
+    {
+      *sum += weight*det*visc_diss_heat_source(NULL, mp->u_heat_source);
+      *sum += weight*det*visc_diss_acoustic_source(NULL, mp->u_heat_source, mp->len_u_heat_source);
+    }
+  else
+    {
 	for( p=0; p<VIM; p++)
 	  {
 	    for( q=0; q<VIM; q++)
@@ -4944,6 +5089,7 @@ compute_volume_integrand(const int quantity, const int elem,
 	    EH(-1,"Appropriate Jacobian entries for the DISSIP volume integral are not available.\n");
 	  }
 
+    }
       }
       break;
 
@@ -5097,34 +5243,56 @@ compute_volume_integrand(const int quantity, const int elem,
       {
         struct Species_Conservation_Terms s_terms; 
         int w1,i,ie,ldof,eqn=MASS_FRACTION;
+        const int init_spec=0;
+        double exp_factor=1.0;
         zero_structure(&s_terms, sizeof(struct Species_Conservation_Terms), 1);
         get_continuous_species_terms(&s_terms, time, tran->theta, delta_t, NULL);
+
+  /* correct mass based on shrinkage */
+	switch (species_no)
+	   {
+            case 0:
+                exp_factor = mp->specific_volume[init_spec]/mp->specific_volume[init_spec+1];
+                break;
+            case 1:
+                exp_factor = mp->specific_volume[init_spec+1]/mp->specific_volume[init_spec];
+                break;
+            default:
+                exp_factor = mp->specific_volume[species_no]/mp->specific_volume[pd->Num_Species_Eqn];
+                break;
+           }
+  /* integrate product reaction rate */
         if(time > tran->init_time+delta_t)
- 	   {*sum += weight*det*(-s_terms.MassSource[species_no]) ;}
-#if 1  
+ 	   {
+            *sum += weight*det*(-s_terms.MassSource[species_no])*exp_factor;
+           }
   if (efv->ev) {
         if( efv->i[species_no] != I_TABLE)
           {       
-           for (i = 0; i < ei->num_local_nodes; i++) {
+           for (i = 0; i < ei->num_local_nodes; i++) 
+               {
                 ie = Proc_Elem_Connect[ei->iconnect_ptr + i];
 		ldof=ei->ln_to_dof[eqn][i];
                 if(ldof >= 0 )
                    {
-        if(time <= tran->init_time+delta_t)
- 	   {*sum += weight*det*efv->ext_fld_ndl_val[species_no][ie] ;}
-                  efv->ext_fld_ndl_val[species_no][ie] += 
-                  bf[eqn]->phi[ldof]*weight*det*
-                       0.5*(delta_t+tran->delta_t)
-                              *(-s_terms.MassSource[species_no]);
-                     if(species_no == 0)	{
-                          Spec_source_lumped_mass[ie] += 
-                               bf[eqn]->phi[ldof]*weight*det;
-                                }
+          /* on first time step, integrate initial reaction product field  */
+                    if(time <= tran->init_time+delta_t)
+ 	                 {
+                          *sum += weight*det*bf[eqn]->phi[ldof]*
+                                       efv->ext_fld_ndl_val[species_no][ie];
+                         }
+         /* and increment reaction product field  */
+                    efv->ext_fld_ndl_val[species_no][ie] += 
+                              bf[eqn]->phi[ldof]*weight*det*
+                              0.5*(delta_t+tran->delta_t)
+                              *(-s_terms.MassSource[species_no])*exp_factor;
+        /* for one time through, integrate lumped mass matrix   */
+                    if(species_no == 0)	
+                          { Spec_source_lumped_mass[ie] += bf[eqn]->phi[ldof]*weight*det; }
                    }
                 } 
           }
   }
-#endif
 
 	if( J_AC != NULL )
 	  {
@@ -5136,9 +5304,10 @@ compute_volume_integrand(const int quantity, const int elem,
 		  {
 		    for( j=0 ; j<ei->dof[var]; j++)
 		      {
-	    
-			J_AC[ ei->gun_list[var][j] ] += weight*  ( h3 * bf[pd->ShapeVar]->d_det_J_dm[a][j] +
- 			fv->dh3dq[a]*bf[var]->phi[j] * det_J )*s_terms.MassSource[species_no];
+		       J_AC[ ei->gun_list[var][j] ] += 
+                            weight*  ( h3 * bf[pd->ShapeVar]->d_det_J_dm[a][j] +
+ 		            fv->dh3dq[a]*bf[var]->phi[j] * det_J )
+                            *(-s_terms.MassSource[species_no])*exp_factor;
 		      }
 		  }
 	      }
@@ -5157,7 +5326,7 @@ compute_volume_integrand(const int quantity, const int elem,
 		ledof = ei->lvdof_to_ledof[var][j];
 		matIndex = ei->matID_ledof[ledof];
 		c = Index_Solution(gnn, var, species_no, 0, matIndex);
- 		J_AC[c] += weight * det * s_terms.d_MassSource_dc[species_no][w1][j];
+ 		J_AC[c] += weight * det * (-s_terms.d_MassSource_dc[species_no][w1][j])*exp_factor;
 	      }
 	     }
 	    }
@@ -5222,6 +5391,44 @@ compute_volume_integrand(const int quantity, const int elem,
                   {
                     J_AC[ ei->gun_list[var][j] ] +=
                               rho*Cp*bf[var]->phi[j]*weight*det;
+                  }
+              }
+      }
+/*      EH(-1,"This volumetric integral not yet implemented \n");  */
+      }
+      break;
+
+    case I_KINETIC_ENERGY:
+      {
+
+      *sum += fv->T*weight*det;
+
+      if( J_AC != NULL )
+      {
+        for( p=0; p<dim; p++)
+          {
+            var = MESH_DISPLACEMENT1 + p;
+
+            if( pd->v[var] )
+              {
+
+                for( j=0; j<ei->dof[var]; j++)
+                  {
+                    J_AC[ ei->gun_list[var][j] ] += fv->T * weight *
+                              ( h3 * bf[pd->ShapeVar]->d_det_J_dm[p][j] +
+                              fv->dh3dq[p]*bf[var]->phi[j] * det_J );
+                  }
+              }
+          }
+            var = TEMPERATURE;
+
+            if( pd->v[var] )
+              {
+
+                for( j=0; j<ei->dof[var]; j++)
+                  {
+                    J_AC[ ei->gun_list[var][j] ] +=
+                              bf[var]->phi[j]*weight*det;
                   }
               }
       }
@@ -5321,7 +5528,7 @@ compute_volume_integrand(const int quantity, const int elem,
 
     case I_POS_FILL:
     case I_NEG_FILL:
-     {
+      {
 	double alpha, height = 1.0;
         double H_U, dH_U_dtime, H_L, dH_L_dtime;
         double dH_U_dX[DIM],dH_L_dX[DIM], dH_U_dp, dH_U_ddh;
@@ -5370,6 +5577,7 @@ compute_volume_integrand(const int quantity, const int elem,
 	      }
 	  } 
       }
+
      }
       break;
     case I_POS_VOLPLANE:
@@ -5626,13 +5834,27 @@ compute_volume_integrand(const int quantity, const int elem,
 	    n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
 	    lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
 
-	    det = fv->sdet; //Different determinant since this is a shell 
+	    det = fv->sdet; //Different determinant since this is a shell
 
 	    /* clean-up */
 	    safe_free((void *) n_dof);
+	    *sum += weight*det*pmv->bulk_density[0];
 	  }
 
-	*sum += weight*det*pmv->bulk_density[0];
+	if(pd->e[R_TFMP_MASS]) {
+	  n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
+	  lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
+	  det = fv->sdet; //Different determinant since this is a shell
+	  dbl saturation, height;
+	  double H_U, dH_U_dtime, H_L, dH_L_dtime;
+	  double dH_U_dX[DIM],dH_L_dX[DIM], dH_U_dp, dH_U_ddh;
+	  height = height_function_model(
+					 &H_U, &dH_U_dtime, &H_L, &dH_L_dtime,
+					 dH_U_dX, dH_L_dX, &dH_U_dp, &dH_U_ddh, time, delta_t);
+	  saturation = fv->tfmp_sat;
+	  safe_free((void *) n_dof);
+	  *sum += weight*det*saturation*height;
+	}
 
 	if ( J_AC != NULL)
 	  {
@@ -5670,6 +5892,27 @@ compute_volume_integrand(const int quantity, const int elem,
 
       }
 
+      break;
+
+    case I_TFMP_FORCE:
+      if(pd->e[R_TFMP_MASS]) {
+	n_dof = (int *)array_alloc (1, MAX_VARIABLE_TYPES, sizeof(int));
+	lubrication_shell_initialize(n_dof, dof_map, -1, xi, exo, 0);
+	det = fv->sdet; //Different determinant since this is a shell
+	dbl pressure;
+	pressure = fv->tfmp_pres;
+	// atmospheric pressure, as defined at the boundary
+	// maybe this should be a material property.
+	dbl Patm = mp->tfmp_density_const[3];
+	
+	/* do this part later
+	dbl surface_tension = ;//[cgs please]
+	 */
+      	*sum += weight*det*(pressure - Patm);
+	safe_free((void *) n_dof);
+      }
+      break;
+      
     default:
       break;
     }
@@ -7700,6 +7943,17 @@ load_fv_sens(void)
         }
     }
 
+  v = SHELL_CURVATURE2;
+  fv_sens->sh_K2 = 0.;
+  if ( pd->v[v] )
+    {
+      dofs  = ei->dof[v];
+      for ( i=0; i<dofs; i++)
+        {
+          fv_sens->sh_K2 += *esp_old->sh_K2[i] * bf[v]->phi[i];
+        }
+    }
+
   /*
    *  Structural shell tension
    */
@@ -8391,7 +8645,30 @@ load_fv_sens(void)
       fv_sens->c[w] = 0.0;
     }
   }
-	
+
+  /*
+   * Thin-Film Multi-Phase Flows
+   */
+
+  v = TFMP_PRES;
+  fv_sens->tfmp_pres = 0.;
+  if ( pd->v[v] ) {
+    dofs  = ei->dof[v];
+    for ( i=0; i<dofs; i++) {
+      fv_sens->tfmp_pres += *esp_old->tfmp_pres[i] * bf[v]->phi[i];
+    }
+  }
+
+  v = TFMP_SAT;
+  fv_sens->tfmp_sat = 0.;
+  if ( pd->v[v] ) {
+    dofs  = ei->dof[v];
+    for ( i=0; i<dofs; i++) {
+      fv_sens->tfmp_sat += *esp_old->tfmp_sat[i] * bf[v]->phi[i];
+    }
+  }
+
+
   /*
    * External...
    */

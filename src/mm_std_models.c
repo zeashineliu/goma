@@ -3130,6 +3130,7 @@ Generalized_FV_Diffusivity(int species_no)  /* current species number*/
      differentiated via HKM's modifications .
      Convert density to weight fractions */
 
+  density_tot = calc_density(mp, TRUE, densityJac, 0.0);
   memset(rho,0,sizeof(dbl)*MAX_CONC);
   memset(drho_dc,0,sizeof(dbl)*MAX_CONC);
   switch(mp->Species_Var_Type)   {
@@ -3144,15 +3145,15 @@ Generalized_FV_Diffusivity(int species_no)  /* current species number*/
       case SPECIES_MASS_FRACTION:
         for(w=0 ; w<pd->Num_Species_Eqn; w++)
            { 
-             rho[w] = fv->c[w]*mp->specific_volume[w]; 
-             drho_dc[w] = mp->specific_volume[w]; 
+             rho[w] = fv->c[w]*density_tot; 
+             drho_dc[w] = density_tot+fv->c[w]*mp->d_density[MAX_VARIABLE_TYPES+w]; 
            }
          break;
       case SPECIES_CONCENTRATION:
         for(w=0 ; w<pd->Num_Species_Eqn; w++)
            { 
-             rho[w] = fv->c[w]*mp->molar_volume[w]; 
-             drho_dc[w] = mp->molar_volume[w]; 
+             rho[w] = fv->c[w]*mp->molecular_weight[w]; 
+             drho_dc[w] = mp->molecular_weight[w]; 
            }
          break;
       case SPECIES_MOLE_FRACTION:
@@ -3162,7 +3163,6 @@ Generalized_FV_Diffusivity(int species_no)  /* current species number*/
          break;
       }
 
-  density_tot = calc_density(mp, TRUE, densityJac, 0.0);
   for (w=0; w<pd->Num_Species_Eqn; w++)
     {
       Do[w] *= exp(-E_div_R[w]/T);
@@ -6407,9 +6407,18 @@ electrolyte_temperature (double t,         /* present value of time */
           t0 = tran->init_time;
         }
 #ifndef tflop
-            if(t <= t0) system("rm T_vs_t.out");  /* zero the file before writing to it */ 
+      if(t <= t0)
+	{
+	  fp = fopen("T_vs_t.out", "w");
+	}
+      else
+	{
+	  fp = fopen("T_vs_t.out", "a");
+	}
+#else
+      fp = fopen("T_vs_t.out", "a");
 #endif
-            if( (fp = fopen("T_vs_t.out", "a")) != NULL)  
+            if(fp != NULL)
               {
                 fprintf(fp, "%15e %15e\n", t, T);
               }
