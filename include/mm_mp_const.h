@@ -296,6 +296,8 @@ extern int Num_Var_Init_Mat[MAX_NUMBER_MATLS];	/* number of variables to overwri
 #define SUSP_BAL   13
 #define ARRHENIUS  14 /* for temperature-dependent S-M diffusivities, KSC */
 #define SHOCK   15
+#define DIFF_ZC   16   /* Zydney-Colton diffusivity for NP */
+#define HYDRO_NP   17
 
 /* Types of vapor or gas pressure relations */
 #define  KELVIN        3

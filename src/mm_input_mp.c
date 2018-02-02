@@ -5491,135 +5491,135 @@ ECHO("\n----Acoustic Properties\n", echo_file);
   if (DiffusionConstitutiveEquation == STEFAN_MAXWELL         ||  
       DiffusionConstitutiveEquation == STEFAN_MAXWELL_CHARGED ||
       DiffusionConstitutiveEquation == STEFAN_MAXWELL_VOLUME    )
-  {
-
-    if (pd_glob[mn]->Num_Species_Eqn + 1 !=  pd_glob[mn]->Num_Species) 
-     {
-      fprintf(stderr,
-	      "ERROR stefan Maxwell diffusion model chosen but number of species, %d\n",
-	      pd_glob[mn]->Num_Species);
-      fprintf(stderr, "\t isn't one less than number of species equations, %d\n",
-	      pd_glob[mn]->Num_Species_Eqn);
-      EH(-1, "Error in number of species and species eqn specs");
-    }
-    n_species = pd_glob[mn]->Num_Species;
-
-    if (n_species < 2) 
-     {
-        EH(-1, "Error: Stefan_Maxwell model should be used for modeling transport of 2 or more species");  
-     }
-
-    iread = look_for_optional(imp, "Diffusivity", input, '=');
-    if (fscanf(imp, "%s", model_name) != 1)
     {
-      EH(-1, "Error: need to specify diffusivity name, e.g. CONSTANT");
-    }
-
-    SPF(es,"%s = %s", "Diffusivity", model_name);
-
-    if (DiffusionConstitutiveEquation == STEFAN_MAXWELL  ||  
-        DiffusionConstitutiveEquation == STEFAN_MAXWELL_CHARGED || 
-        DiffusionConstitutiveEquation == STEFAN_MAXWELL_VOLUME)   /* added by RSL, 9/14/00 */ 
-     {
-       ECHO(es,echo_file);
-      if (!strcmp(model_name, "CONSTANT")) 
-       {
-        for(j = 0; j<n_species; j++) mat_ptr->DiffusivityModel[j] = CONSTANT;
-        n_dij = (n_species*n_species - n_species)/2;
-	
-        for (i = 0; i < n_dij; i++) /* reading the Stefan-Maxwell diffusivities */ 
-          {
-	   if (fscanf(imp, "%d %d %lf", &ii, &jj, &dij) != 3) 
-	    {
-	     EH(-1, "Error in reading Stefan_Maxwell diffusivities: need to input i, j, and Dij");  
-	    }
-           mat_ptr->diffusivity_Stefan_Maxwell[ii][jj] = dij; 
-	   mat_ptr->diffusivity_Stefan_Maxwell[jj][ii] = dij; 
-	   SPF(es,"\t\t %d %d %.4g", ii, jj, dij); ECHO(es,echo_file);
-          }
-       }
-      else if (!strcmp(model_name, "ARRHENIUS")) 
-       {
-        for(j = 0; j<n_species; j++) mat_ptr->DiffusivityModel[j] = CONSTANT;
-        n_dij = (n_species*n_species - n_species)/2;
-        for (i = 0; i < n_dij; i++) /* reading the Stefan-Maxwell diffusivities */ 
-          {
-	   if (fscanf(imp, "%d %d %lf %lf %lf", &ii, &jj, &dij, &E, &T0) != 5) 
-	    {
-	     EH(-1, "Error: need to input ii, jj, dij, E, T0");
-	    }
-           mat_ptr->diffusivity_Stefan_Maxwell[ii][jj] = dij; 
-	   mat_ptr->diffusivity_Stefan_Maxwell[jj][ii] = dij; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][0] = dij; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][0] = dij; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][1] = E; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][1] = E; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][2] = T0; 
-           mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][2] = T0; 
- 	   SPF(es,"\t\t %d %d %.4g %.4g %.4g", ii, jj, dij, E, T0); ECHO(es,echo_file);
-         }
-       }
-      else
-       {
-         EH(-1, "This S-M diffusivity model has not been implemented yet!");
-       }
-     }
-
-    /*
-     *  Get the number of chemical reactions involved in the present
-     *  material block; KSC/GHE: 10/98
-     */
-    iread = look_for_optional(imp, "Number of chemical reactions", input, '=');
-    if (fscanf(imp,"%d",&n_rxn) != 1) 
-      {
-	EH( -1, "Expected to read 1 int for \"Number of chemical reactions\"");
-      }
-
-    pd_glob[mn]->Num_Rxn = n_rxn;  
-    if (n_rxn > MAX_RXN) {
-      sprintf(err_msg,
-	      "Specified number of chemical rxns %d > %d, compiled limit - boost MAX_RXN in rf_fem_const.h",
-	      ii, MAX_RXN);
-      EH( -1, err_msg);
-    }
-    SPF(es,"%s = %d", "Number of chemical reactions", n_rxn); ECHO(es,echo_file);
- 
-    /*
-     *     if n_rxn > 0, then read Butler Volmer kinetics parameters;
-     *        KSC: 10/98; revised: KSC 3/99 
-     *
-     *    
-     */
-    if (n_rxn > 0) {
-      model_read = look_for_mat_prop(imp, "Reaction Rate", 
-				     &(mat_ptr->ReactionRateModel), 
-				     &(mat_ptr->reaction_rate), NO_USER, NULL,
-				     model_name, SCALAR_INPUT, &NO_SPECIES,es);
-
-      if (model_read == -1 && !strcmp(model_name, "ELECTRODE_KINETICS")) 
+      
+      if (pd_glob[mn]->Num_Species_Eqn + 1 !=  pd_glob[mn]->Num_Species) 
 	{
-	  mat_ptr->ReactionRateModel = ELECTRODE_KINETICS;   
-	  num_const = read_constants(imp, &(mat_ptr->u_reaction_rate), 0);
-	  if (num_const < 3) 
-	    {
-	      sprintf(err_msg, 
-		    "Material %s - expected at least 3 constants for %s %s model.\n",
-		    pd_glob[mn]->MaterialName, "Reaction Rate", "ELECTRODE_KINETICS");
-	      EH(-1, err_msg);
-	    }
-	  mat_ptr->len_u_reaction_rate = num_const;
-	  SPF_DBL_VEC( endofstring(es), num_const, mat_ptr->u_reaction_rate);
-	} 
-      else 
+	  fprintf(stderr,
+		  "ERROR stefan Maxwell diffusion model chosen but number of species, %d\n",
+		  pd_glob[mn]->Num_Species);
+	  fprintf(stderr, "\t isn't one less than number of species equations, %d\n",
+		  pd_glob[mn]->Num_Species_Eqn);
+	  EH(-1, "Error in number of species and species eqn specs");
+	}
+      n_species = pd_glob[mn]->Num_Species;
+      
+      if (n_species < 2) 
 	{
-	  EH(-1,"Error: reaction-rate models other than ELECTRODE_KINETICS awaits future implementation");
+	  EH(-1, "Error: Stefan_Maxwell model should be used for modeling transport of 2 or more species");  
+	}
+      
+      iread = look_for_optional(imp, "Diffusivity", input, '=');
+      if (fscanf(imp, "%s", model_name) != 1)
+	{
+	  EH(-1, "Error: need to specify diffusivity name, e.g. CONSTANT");
 	}
 
-      model_read = look_for_mat_prop(imp, "Thermodynamic Potential", 
-   				     &(mat_ptr->ThermodynamicPotentialModel), 
-				     &(mat_ptr->thermodynamic_potential), NO_USER, NULL,
-				     model_name, SCALAR_INPUT, &NO_SPECIES,es);
-
+      SPF(es,"%s = %s", "Diffusivity", model_name);
+      
+      if (DiffusionConstitutiveEquation == STEFAN_MAXWELL  ||  
+	  DiffusionConstitutiveEquation == STEFAN_MAXWELL_CHARGED || 
+	  DiffusionConstitutiveEquation == STEFAN_MAXWELL_VOLUME)   /* added by RSL, 9/14/00 */ 
+	{
+	  ECHO(es,echo_file);
+	  if (!strcmp(model_name, "CONSTANT")) 
+	    {
+	      for(j = 0; j<n_species; j++) mat_ptr->DiffusivityModel[j] = CONSTANT;
+	      n_dij = (n_species*n_species - n_species)/2;
+	      
+	      for (i = 0; i < n_dij; i++) /* reading the Stefan-Maxwell diffusivities */ 
+		{
+		  if (fscanf(imp, "%d %d %lf", &ii, &jj, &dij) != 3) 
+		    {
+		      EH(-1, "Error in reading Stefan_Maxwell diffusivities: need to input i, j, and Dij");  
+		    }
+		  mat_ptr->diffusivity_Stefan_Maxwell[ii][jj] = dij; 
+		  mat_ptr->diffusivity_Stefan_Maxwell[jj][ii] = dij; 
+		  SPF(es,"\t\t %d %d %.4g", ii, jj, dij); ECHO(es,echo_file);
+		}
+	    }
+	  else if (!strcmp(model_name, "ARRHENIUS")) 
+	    {
+	      for(j = 0; j<n_species; j++) mat_ptr->DiffusivityModel[j] = CONSTANT;
+	      n_dij = (n_species*n_species - n_species)/2;
+	      for (i = 0; i < n_dij; i++) /* reading the Stefan-Maxwell diffusivities */ 
+		{
+		  if (fscanf(imp, "%d %d %lf %lf %lf", &ii, &jj, &dij, &E, &T0) != 5) 
+		    {
+		      EH(-1, "Error: need to input ii, jj, dij, E, T0");
+		    }
+		  mat_ptr->diffusivity_Stefan_Maxwell[ii][jj] = dij; 
+		  mat_ptr->diffusivity_Stefan_Maxwell[jj][ii] = dij; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][0] = dij; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][0] = dij; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][1] = E; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][1] = E; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[ii][jj][2] = T0; 
+		  mat_ptr->u_diffusivity_Stefan_Maxwell[jj][ii][2] = T0; 
+		  SPF(es,"\t\t %d %d %.4g %.4g %.4g", ii, jj, dij, E, T0); ECHO(es,echo_file);
+		}
+	    }
+	  else
+	    {
+	      EH(-1, "This S-M diffusivity model has not been implemented yet!");
+	    }
+	}
+      
+      /*
+       *  Get the number of chemical reactions involved in the present
+       *  material block; KSC/GHE: 10/98
+       */
+      iread = look_for_optional(imp, "Number of chemical reactions", input, '=');
+      if (fscanf(imp,"%d",&n_rxn) != 1) 
+	{
+	  EH( -1, "Expected to read 1 int for \"Number of chemical reactions\"");
+	}
+      
+      pd_glob[mn]->Num_Rxn = n_rxn;  
+      if (n_rxn > MAX_RXN) {
+	sprintf(err_msg,
+		"Specified number of chemical rxns %d > %d, compiled limit - boost MAX_RXN in rf_fem_const.h",
+		ii, MAX_RXN);
+	EH( -1, err_msg);
+      }
+      SPF(es,"%s = %d", "Number of chemical reactions", n_rxn); ECHO(es,echo_file);
+      
+      /*
+       *     if n_rxn > 0, then read Butler Volmer kinetics parameters;
+       *        KSC: 10/98; revised: KSC 3/99 
+       *
+       *    
+       */
+      if (n_rxn > 0) {
+	model_read = look_for_mat_prop(imp, "Reaction Rate", 
+				       &(mat_ptr->ReactionRateModel), 
+				       &(mat_ptr->reaction_rate), NO_USER, NULL,
+				       model_name, SCALAR_INPUT, &NO_SPECIES,es);
+	
+	if (model_read == -1 && !strcmp(model_name, "ELECTRODE_KINETICS")) 
+	  {
+	    mat_ptr->ReactionRateModel = ELECTRODE_KINETICS;   
+	    num_const = read_constants(imp, &(mat_ptr->u_reaction_rate), 0);
+	    if (num_const < 3) 
+	      {
+		sprintf(err_msg, 
+			"Material %s - expected at least 3 constants for %s %s model.\n",
+			pd_glob[mn]->MaterialName, "Reaction Rate", "ELECTRODE_KINETICS");
+		EH(-1, err_msg);
+	      }
+	    mat_ptr->len_u_reaction_rate = num_const;
+	    SPF_DBL_VEC( endofstring(es), num_const, mat_ptr->u_reaction_rate);
+	  } 
+	else 
+	  {
+	    EH(-1,"Error: reaction-rate models other than ELECTRODE_KINETICS awaits future implementation");
+	  }
+	
+	model_read = look_for_mat_prop(imp, "Thermodynamic Potential", 
+				       &(mat_ptr->ThermodynamicPotentialModel), 
+				       &(mat_ptr->thermodynamic_potential), NO_USER, NULL,
+				       model_name, SCALAR_INPUT, &NO_SPECIES,es);
+	
       if (model_read == -1 && !strcmp(model_name, "FeS2")) 
 	{
 	  mat_ptr->ThermodynamicPotentialModel = FeS2;   
@@ -5766,119 +5766,123 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 	mat_ptr->len_u_porosity = num_const;
 	SPF_DBL_VEC( endofstring(es), num_const, mat_ptr->u_porosity );
       }
-
+    
     ECHO(es,echo_file);
-
+    
   } /* end of mp-input reading for STEFAN_MAXWELL, STEFAN_MAXWELL_ChARGED 
        KSC: (7/98, 9/2000) 
        *  
        *  AND NOT A MOMENT TOO SOON ! 
        */
-
+  
   /*
    * Read diffusivity and other properties for non-Stefan-Maxwell models;
    * it is captured in the while-loop to avoid conflict.  Added ACSun 9/98
    */ 
-
+  
   /*
-   ********************************************************************************
-   *  LOOP OVER THE SPECIES EQUATIONS
-   ********************************************************************************
+********************************************************************************
+*  LOOP OVER THE SPECIES EQUATIONS
+********************************************************************************
+*/
+  
+  /*
+   * HKM  - Changed the following parameter to Num_Species instead of Num_Species_Eqn
+   *        For dilute problems the two are the same. For nondilute problems, the
+   *        material properties for the last species in the mechanism should be
+   *        read in as well, even though there isn't an explicit conservation 
+   *        equation solved for it. 
+   *
+   
    */
-
-  /*
-  * HKM  - Changed the following parameter to Num_Species instead of Num_Species_Eqn
-  *        For dilute problems the two are the same. For nondilute problems, the
-  *        material properties for the last species in the mechanism should be
-  *        read in as well, even though there isn't an explicit conservation 
-  *        equation solved for it. 
-  *
-
-  */
-
+  
   for (j = 0; j< mat_ptr->Num_Species; j++)
     {
-     if (DiffusionConstitutiveEquation != STEFAN_MAXWELL         &&
-         DiffusionConstitutiveEquation != STEFAN_MAXWELL_CHARGED &&
-         DiffusionConstitutiveEquation != STEFAN_MAXWELL_VOLUME    )
-       {
-	 model_read = look_for_species_proptable(imp, "Diffusivity", mat_ptr,
-					       mat_ptr->DiffusivityModel, 
-					       mat_ptr->diffusivity,
-					       mat_ptr->u_diffusivity, 
-					       mat_ptr->len_u_diffusivity, 
-                                       &(mat_ptr->diffusivity_tableid[j]),
-					       model_name,
-					       0, &species_no, es);
+      if (DiffusionConstitutiveEquation != STEFAN_MAXWELL         &&
+	  DiffusionConstitutiveEquation != STEFAN_MAXWELL_CHARGED &&
+	  DiffusionConstitutiveEquation != STEFAN_MAXWELL_VOLUME    )
+	{
 
-	 fallback_chemkin_generic_prop(&model_read, j, &(mat_ptr->DiffusivityModel[j]),
-				    FALSE, mat_ptr);
+	  species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						it is changed to species number of input property
+						by look_for_mat_prop */
 
-	 ECHO(es,echo_file);
-       /*
-	* Postprocess unique Diffusivity models
-	*/
-	 if (model_read == -1) 
-	   {
-	     EH(-1,
-		"Diffusivity: Bad Card syntax or need another set of species mat cards?");
-	   } 
+	  model_read = look_for_species_proptable(imp, "Diffusivity", mat_ptr,
+						  mat_ptr->DiffusivityModel, 
+						  mat_ptr->diffusivity,
+						  mat_ptr->u_diffusivity, 
+						  mat_ptr->len_u_diffusivity, 
+						  &(mat_ptr->diffusivity_tableid[j]),
+						  model_name,
+						  0, &species_no, es);
+	  
+	  fallback_chemkin_generic_prop(&model_read, j, &(mat_ptr->DiffusivityModel[j]),
+					FALSE, mat_ptr);
+	  
+	  ECHO(es,echo_file);
 
-	 else if (model_read == 0) 
-	   {
-	     if (!strcmp(model_name, "POROUS")) 
-	       {
-		 mat_ptr->DiffusivityModel[species_no] = POROUS;
-		 num_const = mat_ptr->len_u_diffusivity[species_no];
-		 if (num_const < 5) 
-		   {
-		     sr = sprintf(err_msg, 
-				"Matl %s (conc %d) needs at least 5 constants for %s %s model.\n",
-				pd_glob[mn]->MaterialName, species_no,
-				"Diffusivity", "POROUS");
-		     EH(-1, err_msg);
-		   }
-	       }
-	     
-	 /*
-	  * HYDRO is based on diffusive-flux model with contributions from shear gradient
-	  * (gammadot), viscosity gradient, curvature, and hindered settling.  Fickian
-          * diffusion is available for rough convergence spots.
-	  *
-	  *  Thus, if HYDRO is specified, then the following additional parameters are
-	  *  looked for and must be supplied:
-	  *     "Shear Rate Diffusivity"
-	  *     "Viscosity Diffusivity"
-	  *     "Fickian Diffusivity"
-	  *     "Gravity-based Diffusivity"
-	  *
-	  *  For the Q-tensor diffusivity model, the following need to be defined:
-	  *     "Shear Rate Diffusivity"
-	  *     "Viscosity Diffusivity"
-          *     "Q Tensor Diffusivity"
-	  *
-	  *  The Q Tensor diffusivity card takes the form of a model
-	  *  name (which currently must be CONSTANT or NONE), species
-	  *  number and then 3 floats (representing the flux modifier
-	  *  in the flow, normal, and vorticity directions).  i.e.,
-	  *
-	  *      Q Tensor Diffusivity = CONSTANT 0 1.0 1.0 0.5
-	  */
-	     else if (!strcmp(model_name, "HYDRO")) 
-	       {
+	  /* Postprocess unique Diffusivity models */
+	  if (model_read == -1)
+	    {
+	      WH(-1,
+	  	 "Diffusivity: Bad Card syntax or need another set of species mat cards?");
+	    }
+	  else if (model_read == 0)
+	    {
+	      if (!strcmp(model_name, "POROUS")) 
+		{
+		  mat_ptr->DiffusivityModel[species_no] = POROUS;
+		  num_const = mat_ptr->len_u_diffusivity[species_no];
+		  if (num_const < 5) 
+		    {
+		      sr = sprintf(err_msg, 
+				   "Matl %s (conc %d) needs at least 5 constants for %s %s model.\n",
+				   pd_glob[mn]->MaterialName, species_no,
+				   "Diffusivity", "POROUS");
+		      EH(-1, err_msg);
+		    }
+		}
 
-		 mat_ptr->DiffusivityModel[species_no] = HYDRO;
-		 
+	      
+	      /*
+	       * HYDRO is based on diffusive-flux model with contributions from shear gradient
+	       * (gammadot), viscosity gradient, curvature, and hindered settling.  Fickian
+	       * diffusion is available for rough convergence spots.
+	       *
+	       *  Thus, if HYDRO is specified, then the following additional parameters are
+	       *  looked for and must be supplied:
+	       *     "Shear Rate Diffusivity"
+	       *     "Viscosity Diffusivity"
+	       *     "Fickian Diffusivity"
+	       *     "Gravity-based Diffusivity"
+	       *
+	       *  For the Q-tensor diffusivity model, the following need to be defined:
+	       *     "Shear Rate Diffusivity"
+	       *     "Viscosity Diffusivity"
+	       *     "Q Tensor Diffusivity"
+	       *
+	       *  The Q Tensor diffusivity card takes the form of a model
+	       *  name (which currently must be CONSTANT or NONE), species
+	       *  number and then 3 floats (representing the flux modifier
+	       *  in the flow, normal, and vorticity directions).  i.e.,
+	       *
+	       *      Q Tensor Diffusivity = CONSTANT 0 1.0 1.0 0.5
+	       */
+	      else if (!strcmp(model_name, "HYDRO")) 
+		{
+		  
+		  mat_ptr->DiffusivityModel[species_no] = HYDRO;
+		  
 		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
-						   it is changed to species number of input property
-						   by look_for_mat_prop */
-
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
 		 model_read = look_for_mat_prop(imp, "Shear Rate Diffusivity", 
-					      mat_ptr->GamDiffType, 
-					      mat_ptr->gam_diffusivity, 
-					      mat_ptr->u_gadiffusivity, NULL,
-					      model_name, SCALAR_INPUT, &species_no,es);
-	   
+						mat_ptr->GamDiffType, 
+						mat_ptr->gam_diffusivity, 
+						mat_ptr->u_gadiffusivity, NULL,
+						model_name, SCALAR_INPUT, &species_no,es);
+		 
 		 if (model_read == -1 && !strcmp(model_name, "LINEAR") )
 		   {
 		     mat_ptr->GamDiffType[species_no] = LINEAR;
@@ -5911,19 +5915,19 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 				  pd_glob[mn]->MaterialName, "Shear Rate Diffusivity", model_name);
 		     EH(model_read, err_msg);
 		   }
-
+		 
 		 ECHO(es,echo_file);
 		 
 		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
-						 it is changed to species number of input property
-						 by look_for_mat_prop */
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
 		 
 		 model_read = look_for_mat_prop(imp, "Viscosity Diffusivity", 
-					  mat_ptr->MuDiffType, 
-					  mat_ptr->mu_diffusivity, 
-					  mat_ptr->u_mdiffusivity, NULL,
-					  model_name, SCALAR_INPUT, &species_no,es);
-	   
+						mat_ptr->MuDiffType, 
+						mat_ptr->mu_diffusivity, 
+						mat_ptr->u_mdiffusivity, NULL,
+						model_name, SCALAR_INPUT, &species_no,es);
+		 
 		 if (model_read == -1 && !strcmp(model_name, "LINEAR") )
 		   {
 		     mat_ptr->MuDiffType[species_no] = LINEAR;
@@ -5939,9 +5943,9 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 		     if ( num_const < 3) 
 		       {
 			 sr = sprintf(err_msg, 
-				"Matl %s %s needs 3 constants for %s  model: Kg and exponent.\n",
-				pd_glob[mn]->MaterialName, "Viscosity Diffusivity", 
-				"CONST_LS");
+				      "Matl %s %s needs 3 constants for %s  model: Kg and exponent.\n",
+				      pd_glob[mn]->MaterialName, "Viscosity Diffusivity", 
+				      "CONST_LS");
 			 EH(-1, err_msg);
 		       }
 		     mat_ptr->len_u_mdiffusivity[species_no] = num_const;
@@ -5955,19 +5959,19 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 				  pd_glob[mn]->MaterialName, "Viscosity Diffusivity", model_name);
 		     EH(model_read, err_msg);
 		   }
-
+		 
 		 ECHO(es,echo_file);
 		 
 		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
-						 it is changed to species number of input property
-						 by look_for_mat_prop */
-	   
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
 		 model_read = look_for_mat_prop(imp, "Fickian Diffusivity", 
 						mat_ptr->FickDiffType, 
 						mat_ptr->f_diffusivity, 
 						mat_ptr->u_fdiffusivity, NULL,
 						model_name, SCALAR_INPUT, &species_no,es );
-	   
+		 
 		 if (model_read == -1 && !strcmp(model_name, "ANISOTROPIC"))
 		   {
 		     mat_ptr->FickDiffType[species_no] = ANISOTROPIC;
@@ -6020,19 +6024,19 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 				  pd_glob[mn]->MaterialName, "Fickian Diffusivity", model_name);
 		     EH(-1, err_msg);
 		   }
-
+		 
 		 ECHO(es,echo_file);
 		 
 		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
-						 it is changed to species number of input property
-						 by look_for_mat_prop */
-	   
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
 		 model_read = look_for_mat_prop(imp, "Gravity-based Diffusivity", 
 						mat_ptr->GravDiffType, 
 						mat_ptr->g_diffusivity, 
 						mat_ptr->u_gdiffusivity, NULL,
 						model_name, SCALAR_INPUT, &species_no, es);
-	   
+		 
 		 if (model_read == -1 && !strcmp(model_name, "BISECTION"))
 		   {
 		     mat_ptr->GravDiffType[species_no] = BISECTION;
@@ -6099,12 +6103,12 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 				  pd_glob[mn]->MaterialName, "Gravity-based Diffusivity", model_name);
 		     EH(model_read, err_msg);
 		   }
-
+		 
 		 ECHO(es,echo_file);
-	   
-	   /* MMH: I made this optional so it would be
-              backwards-compatible with the other HYDRO diffusivity
-              model material files. */
+		 
+		 /* MMH: I made this optional so it would be
+		    backwards-compatible with the other HYDRO diffusivity
+		    model material files. */
 		 input[0] = '\0';
 		 look_for_optional_string(imp, "Q Tensor Diffusivity", input,
 					  MAX_CHAR_IN_INPUT);
@@ -6115,19 +6119,19 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 		     if(!strncmp(model_name, "CONSTANT", 8))
 		       {
 			 species_no = atoi(strtok(NULL, " \t"));
-
+			 
 			 mat_ptr->QTensorDiffType[species_no] = CONSTANT;
-
+			 
 			 for(i = 0; i < 3; i++)
 			   mat_ptr->q_diffusivity[species_no][i] = atof(strtok(NULL, " \t"));
 			 
 			 mat_ptr->len_u_qdiffusivity[species_no] = 0;
-
-	/* 		 if(mat_ptr->q_diffusivity[species_no][0] != 1.0 || */
-/* 			    mat_ptr->q_diffusivity[species_no][1] != 1.0 || */
-/* 			    mat_ptr->q_diffusivity[species_no][2] != 0.5) */
-/* 			   EH(-1, "Sorry, the Q tensor components are internally hard-coded to 1.0, 1.0, 0.5."); */
-
+			 
+			 /* 		 if(mat_ptr->q_diffusivity[species_no][0] != 1.0 || */
+			 /* 			    mat_ptr->q_diffusivity[species_no][1] != 1.0 || */
+			 /* 			    mat_ptr->q_diffusivity[species_no][2] != 0.5) */
+			 /* 			   EH(-1, "Sorry, the Q tensor components are internally hard-coded to 1.0, 1.0, 0.5."); */
+			 
 			 SPF(es,"%s = %s %d", "Q Tensor Diffusivity", model_name, species_no );
 			 SPF_DBL_VEC( endofstring(es), 3,  mat_ptr->q_diffusivity[species_no]);
 		       }
@@ -6147,14 +6151,14 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 		       }
 		     ECHO(es,echo_file);
 		   }
-
+		 
 		 if (model_read == -1) 
 		   {
-	     
-	     /*
-	      * And just check to make sure this is active, too.
-	      */
-	     
+		     
+		     /*
+		      * And just check to make sure this is active, too.
+		      */
+		     
 		     if( !pd_glob[mn]->e[R_SHEAR_RATE] )
 		       {
 			 sr = sprintf(err_msg, 
@@ -6164,20 +6168,180 @@ ECHO("\n----Acoustic Properties\n", echo_file);
 			 EH(-1, err_msg);
 		       }
 		   }
+
+		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+
 	       }
-	 /*
-	  * SUSPENSION is based on diffusive-flux model with contributions from the velocity
-	  *  gradient tensor, viscosity gradient, particle stress, and hindered settling.  Fickian
-          * diffusion is available for rough convergence spots. There are currently no adjustable
-	  * parameters for this model, but the 2/9a*a, where a is the particle size, must be
-	  * entered for the settling term and the Fickian diffusivity is included for stability.
-	  *
-	  *  Thus, if SUSPENSION is specified, then the following additional parameters are
-	  *  looked for and must be supplied:
-	  *     "Fickian Diffusivity"
-	  *     "Gravity-based Diffusivity"
-	  *     "Q Tensor Diffusivity"
-	  */
+	     /*
+	      * HYDRO_NP is based on diffusive-flux model with contributions from shear gradient
+	      * (gammadot), viscosity gradient, curvature, etc. It assumes a primary species
+	      *  with a HYDRO model and has transport modified by that species. It was designed
+	      * to be used for nanoparticle migration in red blood cell suspensions to help
+	      * understand biodistribution. Ideas based on Zydney & Colton (1988) and Fickian
+	      * diffusion for Brownian effects.
+	      *
+	      *  Thus, if HYDRO_NP is specified, then the following additional parameters are
+	      *  looked for and must be supplied:
+	      *     "Shear Rate Diffusivity" (constant or linear)
+	      *     "Viscosity Diffusivity" (constant or linear)
+	      *     "Fickian Diffusivity" (constant or anisotropic or exponential decay or ZYDNEY_COLTON)
+	      *
+	      */
+	     else if (!strcmp(model_name, "HYDRO_NP")) 
+	       {
+		 
+		 mat_ptr->DiffusivityModel[species_no] = HYDRO_NP;
+		 
+		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
+		 model_read = look_for_mat_prop(imp, "Shear Rate Diffusivity", 
+						mat_ptr->GamDiffType, 
+						mat_ptr->gam_diffusivity, 
+						mat_ptr->u_gadiffusivity, NULL,
+						model_name, SCALAR_INPUT, &species_no,es);
+		 
+		 if (model_read == -1 && !strcmp(model_name, "LINEAR") )
+		   {
+		     mat_ptr->GamDiffType[species_no] = LINEAR;
+		     num_const = read_constants(imp, mat_ptr->u_gadiffusivity, species_no);
+		     mat_ptr->len_u_gadiffusivity[species_no] = num_const;
+		     SPF_DBL_VEC(endofstring(es), num_const, mat_ptr->u_gadiffusivity[species_no] );
+		   }
+		 else
+		   {
+		     sr = sprintf(err_msg, 
+				  "Material %s - unrecognized model for %s \"%s\" ???\n",
+				  pd_glob[mn]->MaterialName, "Shear Rate Diffusivity", model_name);
+		     EH(model_read, err_msg);
+		   }
+		 
+		 ECHO(es,echo_file);
+		 
+		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
+		 model_read = look_for_mat_prop(imp, "Viscosity Diffusivity", 
+						mat_ptr->MuDiffType, 
+						mat_ptr->mu_diffusivity, 
+						mat_ptr->u_mdiffusivity, NULL,
+						model_name, SCALAR_INPUT, &species_no,es);
+		 
+		 if (model_read == -1 && !strcmp(model_name, "LINEAR") )
+		   {
+		     mat_ptr->MuDiffType[species_no] = LINEAR;
+		     num_const = read_constants(imp, mat_ptr->u_mdiffusivity, species_no);
+		     mat_ptr->len_u_mdiffusivity[species_no] = num_const;
+		     SPF_DBL_VEC(endofstring(es), num_const, mat_ptr->u_mdiffusivity[species_no] );	       
+		   }
+		 else
+		   {
+		     sr = sprintf(err_msg, 
+				  "Material %s - unrecognized model for %s \"%s\" ???\n",
+				  pd_glob[mn]->MaterialName, "Viscosity Diffusivity", model_name);
+		     EH(model_read, err_msg);
+		   }
+		 
+		 ECHO(es,echo_file);
+		 
+		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+		 
+		 model_read = look_for_mat_prop(imp, "Fickian Diffusivity", 
+						mat_ptr->FickDiffType, 
+						mat_ptr->f_diffusivity, 
+						mat_ptr->u_fdiffusivity, NULL,
+						model_name, SCALAR_INPUT, &species_no,es );
+		 
+		 if (model_read == -1 && !strcmp(model_name, "ANISOTROPIC"))
+		   {
+		     mat_ptr->FickDiffType[species_no] = ANISOTROPIC;
+		     num_const = read_constants(imp, mat_ptr->u_fdiffusivity, species_no);
+		     if ( num_const < 3) 
+		       {
+			 sr = sprintf(err_msg, 
+				      "Matl %s %s needs 3 constants for %s  model.\n",
+				      pd_glob[mn]->MaterialName, "Fickian Diffusivity", 
+				      "HYDRO Diffusivity");
+			 EH(-1, err_msg);
+		       }
+		     mat_ptr->len_u_fdiffusivity[species_no] = num_const;
+		     SPF_DBL_VEC(endofstring(es), num_const, mat_ptr->u_fdiffusivity[species_no] );	       
+		   }
+		 else if (model_read == -1 && !strcmp(model_name, "EXP_DECAY"))
+		   {
+		     mat_ptr->FickDiffType[species_no] = EXP_DECAY;
+		     num_const = read_constants(imp, mat_ptr->u_fdiffusivity, species_no);
+		     if ( num_const < 2) 
+		       {
+			 sr = sprintf(err_msg, 
+				      "Matl %s %s needs 2 constants for %s  model.\n",
+				      pd_glob[mn]->MaterialName, "EXP_DECAY Diffusivity", 
+				      "HYDRO Diffusivity");
+			 EH(-1, err_msg);
+		       }
+		     mat_ptr->len_u_fdiffusivity[species_no] = num_const;
+		     SPF_DBL_VEC(endofstring(es), num_const, mat_ptr->u_fdiffusivity[species_no] );	       
+		   }
+		 else if (model_read == -1 && !strcmp(model_name, "DIFF_ZC"))
+		   {
+		     mat_ptr->FickDiffType[species_no] = DIFF_ZC;
+		     num_const = read_constants(imp, mat_ptr->u_fdiffusivity, species_no);
+		     if ( num_const < 4) 
+		       {
+			 sr = sprintf(err_msg, 
+				      "Matl %s %s needs 4 constants for %s  model.\n",
+				      pd_glob[mn]->MaterialName, "ZC Diffusivity", 
+				      "HYDRO Diffusivity");
+			 EH(-1, err_msg);
+		       }
+		     mat_ptr->len_u_fdiffusivity[species_no] = num_const;
+		     SPF_DBL_VEC(endofstring(es), num_const, mat_ptr->u_fdiffusivity[species_no] );	       
+		   }
+		 else
+		   {
+		     sr = sprintf(err_msg, 
+				  "Material %s - unrecognized model for %s \"%s\" ???\n",
+				  pd_glob[mn]->MaterialName, "Fickian Diffusivity", model_name);
+		     EH(-1, err_msg);
+		   }
+		 
+		 /*
+		  * And just check to make sure this is active, too.
+		  */
+		 
+		 if( !pd_glob[mn]->e[R_SHEAR_RATE] )
+		   {
+		     sr = sprintf(err_msg, 
+				  "Matl %s (conc %d) %s %s model needs the \"%s\" eqn active.\n",
+				  pd_glob[mn]->MaterialName, species_no,
+				  "Diffusivity", "HYDRO", "shear_rate");
+		     EH(-1, err_msg);
+		   }
+
+		 species_no = mat_ptr->Num_Species; /* set species number equal to max number of species
+						       it is changed to species number of input property
+						       by look_for_mat_prop */
+
+	       }
+	     /*
+	      * SUSPENSION is based on diffusive-flux model with contributions from the velocity
+	      *  gradient tensor, viscosity gradient, particle stress, and hindered settling.  Fickian
+	      * diffusion is available for rough convergence spots. There are currently no adjustable
+	      * parameters for this model, but the 2/9a*a, where a is the particle size, must be
+	      * entered for the settling term and the Fickian diffusivity is included for stability.
+	      *
+	      *  Thus, if SUSPENSION is specified, then the following additional parameters are
+	      *  looked for and must be supplied:
+	      *     "Fickian Diffusivity"
+	      *     "Gravity-based Diffusivity"
+	      *     "Q Tensor Diffusivity"
+	      */
 	     else if (!strcmp(model_name, "SUSPENSION")) 
 	       {
 		 mat_ptr->DiffusivityModel[species_no] = SUSP_BAL;

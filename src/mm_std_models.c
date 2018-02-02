@@ -3890,6 +3890,385 @@ hydro_flux(struct Species_Conservation_Terms *st,
   return(status);
 }
 
+/******************************************************************************
+*
+*  Function that computes the "diffusive" mass flux resulting from 
+*  shear  gradients and viscosity gradients in the main suspension species and
+*  brownian diffusion for nanoparticles (NP), i.e. hydroynamics
+*  and loads st->diff_flux[][].  Returns mass flux for species w in *st->diff_flux
+*
+*     Author: R.R. Rao, 6/17
+*
+*
+******************************************************************************/
+int
+hydro_flux_NP(struct Species_Conservation_Terms *st,
+	      int w)                      /* species number NP*/
+{
+  int a, i, j, l, p, b, var;
+  int w_susp, w_NP; /* susp is the RBC and NP is for the nanoparticles */
+  int status=1;
+  int shear_rate_JAC =1;
+  int dim;
+  dbl gammadot, *grad_gd, gamma_dot[DIM][DIM];
+  VISCOSITY_DEPENDENCE_STRUCT d_mu_struct;  /* viscosity dependence */
+  VISCOSITY_DEPENDENCE_STRUCT *d_mu = &d_mu_struct;
+  dbl mu, grad_mu[DIM];
+  dbl Dc, Dmu;
+  dbl D_np, D_np1, D_zc, n_zc;
+  dbl d_D_zc_dy_susp, d_D_zc_dsh;
+  dbl Dd[DIM];
+  dbl dDd_dy[DIM];
+  dbl dDd_dy_NP[DIM];
+  dbl dDd_dsh[DIM];
+  
+ 
+  dbl *Y, (*grad_Y)[DIM], *dmu_dY, *d2mu_dY2;
+  dbl maxpack;
+  
+  dbl (* d_grad_gd_dmesh)[DIM][MDE];
+  dbl d_grad_mu_dmesh[DIM][DIM][MDE];
+  dbl c_term = 0.0, mu_term = 0.0, d_term = 0.0;
+  dbl c_term1 = 0.0, mu_term1 = 0.0, d_term1 = 0.0;
+  
+  dbl dDc_dy = 0.;
+  dbl dDmu_dy = 0.;
+  dbl dDc_dT = 0.0;  /* These are just place holders at the moment */
+  dbl dDmu_dT = 0.0;
+ 
+  
+  /* Initialize arrays */
+  for (i=0; i < DIM; i++) {
+    Dd[i] = 0;
+    dDd_dy[i] = 0;
+    dDd_dsh[i] = 0;
+  }
+  
+  /*
+   * Put in a warning about these species variable types until
+   * the equations can be worked out
+   */
+  if (mp->Species_Var_Type == SPECIES_MASS_FRACTION ||
+      mp->Species_Var_Type == SPECIES_MOLE_FRACTION ||
+      mp->Species_Var_Type == SPECIES_VOL_FRACTION) {
+    EH(-1,
+       "Possible Conflict: Hydro Flux Expression hasn't been checked out for this species var type");
+  }
+  
+  /* Set up some convenient local variables and pointers */
+  
+  Y = fv->c;
+  grad_Y = fv->grad_c;
+  grad_gd = fv->grad_SH;
+  gammadot = fv->SH;
+  d_grad_gd_dmesh = fv->d_grad_SH_dmesh;
+  maxpack = gn->maxpack;
+  
+  dim = pd->Num_Dim;
+  
+  dmu_dY = &(mp->d_viscosity[MAX_VARIABLE_TYPES]);
+  d2mu_dY2 = &(mp->d2_viscosity[MAX_VARIABLE_TYPES]);
+  
+  memset(gamma_dot, 0, DIM*DIM*sizeof(dbl) );
+  
+  for( a=0; a<VIM; a++ )
+    {
+      for( b=0; b<VIM; b++)
+	{
+	  gamma_dot[a][b] = fv->grad_v[a][b] + fv->grad_v[b][a];
+	}
+    }
+  
+  /* get mu and grad_mu */
+  
+  mu = viscosity(gn, gamma_dot, d_mu);
+  w_NP = w;  /* make it clearer since we have two different w values */
+  w_susp = (int) mp->u_fdiffusivity[w_NP][0] ; /* put this in the input file */
+  
+  
+  memset(grad_mu, 0, DIM*sizeof(dbl));
+  
+  /* Controversial as to whether the grad should
+   *  depend on all variables or just concentration.
+   * For now we will just do concentration.
+   */
+  
+  
+  /* Separate grad_mu into two parts, so that we can
+   * use two different coefficients. The first part
+   * gives the sensitivity wrt to concentration and
+   * the second gives the sensitivity wrt to other
+   * fields such as shear-rate etc.
+   * This is to get a better match with the data.
+   */
+  
+  for( a=0; a<dim; a++)
+    {
+      grad_mu[a] += dmu_dY[w_susp]*fv->grad_c[w_susp][a];
+    }
+  
+  
+   
+  /* Compute HYDRODYNAMIC diffusive fluxes */
+  /* Assign diffusivity values to each term */
+  
+  if (Y[w_NP] > 0.)
+    {
+      if (mp->GamDiffType[w_NP] == LINEAR) 
+	{
+	  Dc  = mp->u_gadiffusivity[w_NP][0] * 1.4 * Y[w_NP];
+	  dDc_dy = mp->u_gadiffusivity[w_NP][0] * 1.4;
+	}
+      else
+	{
+	  Dc = mp->gam_diffusivity[w_NP];
+	  dDc_dy = 0.0;
+	}
+      
+      if (mp->MuDiffType[w] == LINEAR) 
+	{
+	  Dmu  = mp->u_mdiffusivity[w_NP][0] * 1.4 * Y[w_NP];
+	  dDmu_dy = mp->u_mdiffusivity[w_NP][0] * 1.4;
+	}
+      
+	{
+	  Dmu = mp->mu_diffusivity[w_NP];
+	  dDmu_dy = 0.0;
+	}
+    }
+  else
+    {
+      Dmu = 0.;
+      Dc = 0.;
+    } 
+  
+  
+  /*  anisotropic diffusion coefficient set
+   *  in mat file it is direction dependent
+   */
+  
+  if(mp->FickDiffType[w] == ANISOTROPIC )
+    {
+      for ( a=0; a<dim; a++)
+	{
+	  Dd[a]  = mp->u_fdiffusivity[w][a];
+	  dDd_dy[a] = 0.;
+	}
+    }
+  else if(mp->FickDiffType[w] == DIFF_ZC )
+    {
+      /* Brownian diffusion + Zydney-Colton terms */
+      D_np = mp->u_fdiffusivity[w_NP][1];  /* Brownian diffusion */
+      n_zc =  mp->u_fdiffusivity[w_NP][2]; /* exponent of Z-X term */
+      D_np1 = mp->u_fdiffusivity[w_NP][3]; /* scaling for Z-X term */
+
+      if (Y[w_susp] > 0.)
+	{
+	  D_zc =  D_np +  D_np1 * gammadot *Y[w_susp]* pow((1-Y[w_susp]),n_zc);
+	  d_D_zc_dy_susp =  D_np1  * gammadot * pow((1-Y[w_susp]),n_zc)-
+	    D_np1  * gammadot *Y[w_susp]* n_zc *pow((1-Y[w_susp]),n_zc-1.);
+	  d_D_zc_dsh =   D_np1  *Y[w_susp]* pow((1-Y[w_susp]),n_zc);
+	}
+      else 
+	{
+	  D_zc =  D_np ;
+	  d_D_zc_dy_susp =  0.;
+	  d_D_zc_dsh =   0.;
+	}
+
+      
+      for ( a=0; a<dim; a++)
+	{
+	  Dd[a]  = D_zc ;
+	  dDd_dy[a] = d_D_zc_dy_susp ;
+	  dDd_dy_NP[a] = 0.;
+	  dDd_dsh[a] = d_D_zc_dsh ;
+	  
+	}
+    }
+  else if(mp->FickDiffType[w] == EXP_DECAY )
+    {
+      for ( a=0; a<dim; a++)
+	{
+	  if(Y[w] >= 0. && Y[w] <= maxpack)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] * 
+		(exp(-mp->u_fdiffusivity[w][1] * Y[w])
+		 +exp(-mp->u_fdiffusivity[w][1] * fabs (maxpack -Y[w])));
+	      dDd_dy[a] = -mp->u_fdiffusivity[w][0] * mp->u_fdiffusivity[w][1]*
+		(exp(-mp->u_fdiffusivity[w][1] * Y[w])
+		 -exp(-mp->u_fdiffusivity[w][1] * fabs (maxpack -Y[w])));
+	    }
+	  else if(Y[w] < 0.)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] ;
+	      dDd_dy[a] = 0.;
+	    }
+	  else if(Y[w] > maxpack)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] ;
+	      dDd_dy[a] = 0.;
+	    }
+	  
+	}
+    } 
+  
+  
+  
+  /* assemble residual */
+  for ( a=0; a<dim; a++)
+    {
+      st->diff_flux[w_NP][a] = -Y[w_NP]*Dc*(Y[w_susp]*grad_gd[a] + gammadot*grad_Y[w_susp][a]);
+      st->diff_flux[w_NP][a] += -Y[w_NP]*Y[w_susp]*gammadot*Dmu*grad_mu[a]/mu;
+      
+      st->diff_flux[w_NP][a] += -Dd[a]*grad_Y[w_NP][a];
+    }
+  
+  if (af->Assemble_Jacobian)
+    {
+      /* Compute derivative of viscosity gradient with respect to mesh displacement */
+      if ( pd->v[MESH_DISPLACEMENT1] )
+	{
+	  memset(d_grad_mu_dmesh, 0, DIM*DIM*MDE*sizeof(dbl));
+	  
+	  /* d_grad_mu_dmesh */
+	  
+	  for ( a=0; a<dim; a++)
+	    {
+	      for( p=0; p<dim; p++)
+		{
+		  for( j=0;  j<ei->dof[MESH_DISPLACEMENT1]; j++)
+		    {
+		      d_grad_mu_dmesh[a][p][j]=0.0;
+		      
+		      var = MASS_FRACTION;
+		      for( l=0; l< ei->dof[var]; l++)
+			{
+			  d_grad_mu_dmesh[a][p][j] += dmu_dY[w]*(*esp->c[w][l])*
+			    bf[var]->d_grad_phi_dmesh[l][a][p][j];
+			}
+		      
+		      d_grad_mu_dmesh[a][p][j] += d_mu->gd*d_grad_gd_dmesh[a][p][j];
+		      
+		    }
+		  
+		}
+	    }
+	}
+      
+      var = MASS_FRACTION;
+      
+      for ( j=0; j<ei->dof[var]; j++)
+	{
+	  for ( a=0; a<dim && pd->v[var]; a++)
+	    {
+	      /* suspension concentration term */
+	      c_term = grad_gd[a]*bf[var]->phi[j];
+	      c_term += gammadot*bf[var]->grad_phi[j][a];
+	      c_term *= -Y[w_NP]*Dc;
+	      
+	      /* nanoparticle concentration term */
+	      c_term1 = -Y[w_NP]*dDc_dy*bf[var]->phi[j] * 
+		(Y[w_susp]*grad_gd[a] + gammadot*grad_Y[w_susp][a]) ;
+	      c_term1 -= bf[var]->phi[j]*Dc*(Y[w_susp]*grad_gd[a] + gammadot*grad_Y[w_susp][a]);
+	      
+	      
+	      mu_term = -Y[w_NP]*bf[var]->phi[j]*gammadot*Dmu*grad_mu[a]/mu;
+	      mu_term += Y[w_NP]*Y[w_susp]*gammadot*d_mu->C[w_susp][j]*(Dmu*grad_mu[a])/mu/mu;
+	      mu_term += -Dmu*Y[w_NP]*Y[w_susp]*gammadot*(dmu_dY[w_susp]*bf[var]->grad_phi[j][a] + 
+							 d2mu_dY2[w_susp]*grad_Y[w_susp][a]*bf[var]->phi[j])/mu;
+	      
+	      mu_term1 =- dDmu_dy*bf[var]->phi[j]*Y[w_NP]*Y[w_susp]
+		*gammadot*grad_mu[a]/mu ; 
+	      mu_term1 -= Y[w_susp]*gammadot*(Dmu*grad_mu[a]) *bf[var]->phi[j]/mu;
+	      
+	      d_term = - grad_Y[w_NP][a]*dDd_dy[a]*bf[var]->phi[j];
+	      
+	      d_term1 = -bf[var]->grad_phi[j][a] * Dd[a] 
+		- grad_Y[w_NP][a]*dDd_dy_NP[a]*bf[var]->phi[j];
+	      
+	      st->d_diff_flux_dc[w_NP][a] [w_susp][j] = c_term + mu_term + d_term;
+	      
+	      st->d_diff_flux_dc[w_NP][a] [w_NP][j] = c_term1 + mu_term1 + d_term1;
+
+	    }
+	}
+      
+      var = SHEAR_RATE;
+      /* see if this derivative is causing problems */
+      /* shear_rate_JAC =0;  */    
+      if (shear_rate_JAC)
+	{
+	  for( a=0; a<dim && pd->v[var]; a++)
+	    {
+	      for( j=0; j<ei->dof[var];j++)
+		{
+		  
+		  c_term = Y[w_susp]*bf[var]->grad_phi[j][a];
+		  c_term += grad_Y[w][a]*bf[var]->phi[j];
+		  c_term *= -Y[w_NP]*Dc;
+		  
+		  mu_term = -Dmu *Y[w_NP]*Y[w_susp]*grad_mu[a]*bf[var]->phi[j]/mu;
+		  
+		  
+		  
+		  mu_term += ( Y[w_NP]*Y[w_susp]*gammadot*d_mu->gd * bf[var]->phi[j]*
+			       (Dmu*grad_mu[a])/mu/mu);
+		  
+		  d_term = dDd_dsh[a]*grad_Y[w_NP][a];
+		  
+		  st->d_diff_flux_dSH[w_NP][a][j] = c_term + mu_term + d_term;
+		}
+	    }
+	}
+      
+      var = TEMPERATURE;
+      for( a=0; a<dim && pd->v[var]; a++)
+	{
+	  for (j=0; j<ei->dof[var]; j++)
+	    
+	    {
+	      c_term = dDc_dT*(Y[w_NP]*Y[w_susp]*grad_gd[a] + Y[w_NP]*gammadot*grad_Y[w_susp][a]);
+	      mu_term = (dDmu_dT*grad_mu[a] -  
+			 Dmu * grad_mu[a]*d_mu->T[j]/mu );
+	      mu_term *= -Y[w_NP]*Y[w_susp]*gammadot/mu;
+	      st->d_diff_flux_dT[w_NP][a][j] = c_term + mu_term ;
+	    }
+	}
+  
+      
+      var = MESH_DISPLACEMENT1;
+      
+      if(pd->v[var])
+	{
+	  for ( a=0; a<dim; a++)
+	    {
+	      for( p=0; p<dim; p++)
+		{
+		  for( j=0;  j<ei->dof[var]; j++)
+		    
+		    {
+		      c_term  = -Y[w_NP]*Y[w_susp]*d_grad_gd_dmesh[a][p][j];
+		      c_term += -Y[w_NP]*gammadot*fv->d_grad_c_dmesh[a][w_susp][p][j];
+		      c_term *= Dc;
+		      
+		      mu_term  = -Y[w_NP]*Y[w_susp]*gammadot*d_grad_mu_dmesh[a][p][j]/mu;
+		      mu_term *= Dmu; 
+		      
+		      d_term = -fv->d_grad_c_dmesh[a][w_NP][p][j]*Dd[a];
+		      
+		      st->d_diff_flux_dmesh[w_NP][a][p][j] = c_term + mu_term 
+			+ d_term ;
+		    }
+		}
+	    }
+	}
+    }
+
+  return(status);
+}
+
+
 /*****************************************************************************/
 /*****************************************************************************/
 /******************************************************************************

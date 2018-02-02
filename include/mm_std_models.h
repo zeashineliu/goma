@@ -106,6 +106,11 @@ PROTO((struct Species_Conservation_Terms *, /* st                            */
        dbl ,                    /* time step                                 */
        const dbl [DIM]));       /* element size                              */
 
+EXTERN int hydro_flux_NP		/* mm_std_models.c                   */
+PROTO((struct Species_Conservation_Terms *, /* st                            */
+       int ));  			/* w - species number                */
+                                        
+
 EXTERN int suspension_balance	/* mm_std_models.c                           */
 PROTO((struct Species_Conservation_Terms *, /* st                            */
        int ));			/* w - species number                        */

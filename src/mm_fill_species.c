@@ -9810,6 +9810,10 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	    case HYDRO:
 	      hydro_flux(st, w, tt, dt, hsquared);
 	      break;
+
+	    case HYDRO_NP:
+	      hydro_flux_NP(st, w);
+	      break;
 	 
 	    default:
 	      EH( -1, "Unknown Diffusivity Model.");
@@ -12670,11 +12674,11 @@ assemble_invariant ( double tt,	/* parameter to vary time integration from
 
   if(I2)
     {
-      gd = pow(0.5*I2,0.5);
+      gd = pow(0.5*I2,0.5)+ .001;
     }
   else
     {
-      gd = 0.;
+      gd = 0.001;
     }
   /*
    * Compute derivatives of 2nd invariant wrt velocities and displacements
@@ -12732,7 +12736,7 @@ assemble_invariant ( double tt,	/* parameter to vary time integration from
 		  
 		  if ( pd->e[eqn] & T_ADVECTION )
 		    {
-		      advection = -gd;
+		      advection = -(gd );
 		      advection *= wt_func * det_J * wt * h3;
 		      advection *= pd->etm[eqn][(LOG2_ADVECTION)];
 		    }
