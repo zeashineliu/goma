@@ -2437,7 +2437,7 @@ assemble_stress_fortin(dbl tt,	/* parameter to vary time integration from
  */
 int 
 assemble_stress_log_conf(dbl tt,	 
-		     dbl dt,	              
+		     dbl dt,              
 		     dbl h[DIM], 
 		     dbl hh[DIM][DIM], 
 		     dbl dh_dxnode[DIM][MDE],
@@ -2473,7 +2473,7 @@ assemble_stress_log_conf(dbl tt,
   dbl s_dot[DIM][DIM];    
   dbl grad_s[DIM][DIM][DIM];
   dbl d_grad_s_dmesh[DIM][DIM][DIM][DIM][MDE];
-  dbl gt[DIM][DIM];
+  dbl g[DIM][DIM], gt[DIM][DIM];
 
   //Polymer viscosity
   dbl mup;
@@ -2485,10 +2485,10 @@ assemble_stress_log_conf(dbl tt,
   dbl wlf_denom;
 
   //Consitutive prameters
-  dbl alpha;     
-  dbl lambda=0;    
+  dbl alpha;
+  dbl lambda=0;
   dbl d_lambda;
-  dbl eps;      
+  dbl eps;
   dbl Z=1.0;        
 
   // Decomposition of velocity vector
@@ -2522,7 +2522,7 @@ assemble_stress_log_conf(dbl tt,
   dim   = pd->Num_Dim;
   wt = fv->wt;
   det_J = bf[eqn]->detJ;
-  h3 = fv->h3;		      
+  h3 = fv->h3;      
 
   //Load pointers
   (void) stress_eqn_pointer(v_s);
@@ -2566,7 +2566,17 @@ assemble_stress_log_conf(dbl tt,
 	}
     }
 
+  // Velocity gradient projection
+  for (a=0; a<VIM; a++)
+    {
+      for (b=0; b<VIM; b++)
+	{
+	  g[a][b]  = fv->G[a][b];
+	  gt[a][b] = fv->G[b][a];
+	}
+    }
 
+  
   if(vn->wt_funcModel == GALERKIN)
     {
       supg = 0.0;

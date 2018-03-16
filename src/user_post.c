@@ -98,14 +98,15 @@ user_post(dbl *param)		/* ptr to the user-defined parameter list */
   /* Begin Execution */
  /**********************************************************/
 
+ /* Commented this out -- fix after using user_post */
  /* Comment out our remove this line if using this routine */
-  if (warning == 0)
+    if (warning == 0)
     {
       fprintf(stderr,"\n\n#############\n"
 	    "# WARNING!! #  No user_defined post processing model implemented"
 	      "\n#############\n");
       warning = 1;
-    }
+      }
 
  /************Initialize everything for saftey**************/
   post_value = 0;                           /*Do not touch */
@@ -136,6 +137,55 @@ user_post(dbl *param)		/* ptr to the user-defined parameter list */
 /*  if (mp->PorousMediaType == POROUS_UNSATURATED) */
 /*       post_value = pmv->r_pore; */
 
+  dbl MS[MAX_MODES][DIM][DIM];
+  dbl S_Tot[DIM][DIM];
+  dbl gamma[DIM][DIM];
+  dbl grad_v[DIM][DIM];
+  int a,b,i,j,m,n,mode;
+  dbl eta;
+  dbl s[DIM][DIM];
+  dbl exp_s[DIM][DIM];
+  
+  /*  for (a=0; a < 2; a++)
+    {
+      for (b=0; b < 2; b++)
+	{
+	  grad_v[a][b] = fv->grad_v[a][b];
+	  S_Tot[a][b] = 0.;
+	}
+    }
+
+  for (a=0; a < 2; a++)
+    {
+      for (b=0; b < 2; b++)
+	{
+	  gamma[a][b] = grad_v[a][b] + grad_v[b][a];
+	}
+	}  */
+  
+  /*for (mode=0; mode < vn->modes; mode++)
+    {
+      for (a=0; a < 2; a++)
+	{
+	  for (b=0; b < 2; b++)
+	    {
+	      S_Tot[a][b] += MS[mode][a][b];
+	    }
+	}
+    }
+
+  for ( a=0; a < 2; a++)
+    {
+      for (b=0; b < 0; b++)
+	{
+	  S_Tot[a][b] += eta * gamma[a][b];
+	}
+    }
+  
+  post_value = 
+  
+  */
+  
   return post_value;
 } /* End of routine usr_post                                                 */
 /*****************************************************************************/

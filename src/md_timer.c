@@ -94,7 +94,7 @@ ut(void)
       exit(-1);
     }
   u  = ((dbl) (tm->tms_utime)) * secondsPerTick; 
-  return(u);
+  return(MPI_Wtime());
 } /* END of routine ut */
 /*****************************************************************************/
 
