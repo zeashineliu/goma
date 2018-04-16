@@ -640,6 +640,11 @@ viscosity(struct Generalized_Newtonian *gn_local,
       mu = carreau_wlf_conc_viscosity(gn_local, gamma_dot, d_mu,
 				      gn_local->ConstitutiveEquation);
     }
+  else if (gn_local->ConstitutiveEquation == BINGHAM_SUSPENSION)
+    {
+      mu = bingham_suspension_viscosity(gn_local, gamma_dot, d_mu,
+					fv->c[gn_local->sus_species_no]);
+    }
   else
     {
       EH(-1,"Unrecognized viscosity model for non-Newtonian fluid");
@@ -3326,6 +3331,170 @@ carreau_wlf_conc_viscosity(struct Generalized_Newtonian *gn_local,
  
    return(mu);
  }
+
+
+double
+bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
+			     dbl gamma_dot[DIM][DIM], /* strain rate tensor */
+			     VISCOSITY_DEPENDENCE_STRUCT *d_mu,
+			     dbl C )  /* Concentration */
+{
+  int a, b, w;
+  int mdofs=0,vdofs;
+  int var;
+  
+  int i, j;
+
+  dbl gammadot;	                /* strain rate invariant */ 
+
+  dbl d_gd_dv[DIM][MDE];        /* derivative of strain rate invariant 
+				   wrt velocity */ 
+  dbl d_gd_dmesh[DIM][MDE];     /* derivative of strain rate invariant 
+				   wrt mesh */ 
+
+  dbl val, dmudC;
+  dbl mu = 0.;
+  dbl mu0;
+  dbl maxpack;
+  dbl nexp;
+  dbl tau_y;
+  dbl offset;
+
+  vdofs = ei->dof[VELOCITY1];
+  
+  if ( pd->e[R_MESH1] )
+    {
+      mdofs = ei->dof[R_MESH1];
+    }
+  
+
+  calc_shearrate(&gammadot, gamma_dot, d_gd_dv, d_gd_dmesh);
+
+  maxpack = gn_local->maxpack;
+  mu0 = gn_local->mu0;
+  nexp = gn_local->nexp;
+  tau_y = gn_local->tau_y;
+  offset = 0.00001;
+
+  if ( nexp > 0.0 || ( C > 0.0 && C < (0.90 * maxpack) ))
+    {
+      val = pow( 1.0 - C/maxpack, nexp);
+      mu = mu0 * val;
+      mu += tau_y/(gammadot + offset);
+
+      /* d( mu )/dc */
+
+      var = MASS_FRACTION;
+      val = pow( 1.0 - C/maxpack, nexp-1. );
+
+      if ( d_mu != NULL )
+	{
+	  dmudC = mu0 * (-nexp * val / maxpack);
+	    for( w=0; w < pd->Num_Species_Eqn ; w++)
+	      {
+		for ( j=0; j < ei->dof[var]; j++)
+		  {
+		    d_mu->C[w][j] = dmudC * bf[var]->phi[j];
+		  }
+	      }
+	}
+  
+    }
+  else if ( C <= 0. )
+    {
+      mu = tau_y/(gammadot + offset) + mu0;
+
+      /* d( mu )/dc */
+
+      var = MASS_FRACTION;
+      if ( d_mu != NULL )
+	{
+	    for( w=0; w < pd->Num_Species_Eqn ; w++)
+	      {
+		for ( j=0; j < ei->dof[var]; j++)
+		  {
+		    d_mu->C[w][j] = 0.;
+		  }
+	      }
+	}
+    }
+  else if ( C >= 0.90 * maxpack )
+    {
+      val = pow( 0.10, nexp);
+      mu = mu0 * val;
+      mu += tau_y/(gammadot + offset);
+
+      /* d( mu )/dc */
+
+      var = MASS_FRACTION;
+      if ( d_mu != NULL )
+	{
+	    for( w=0; w < pd->Num_Species_Eqn ; w++)
+	      {
+		for ( j=0; j < ei->dof[var]; j++)
+		  {
+		    d_mu->C[w][j] = 0.;
+		  }
+	      }
+	}
+    }
+  
+  /*
+   * d( mu )/dv
+   */
+  val = pow( gammadot + offset, 2.);
+  if ( d_mu != NULL )
+    {
+      d_mu->gd = -tau_y / val;
+    }
+  
+  if ( d_mu != NULL && pd->e[R_MOMENTUM1] )
+    {
+      for ( a=0; a<VIM; a++)
+        {
+          for ( i=0; i<vdofs; i++)
+	    {
+	      if(gammadot != 0.0 && Include_Visc_Sens )
+	        {
+	          d_mu->v[a][i] =
+		    d_mu->gd * d_gd_dv[a][i] ;
+	        }
+	      else
+	        {
+	          d_mu->v[a][i] = 0.0 ;
+	        }
+	    }
+        }
+    }
+  
+  /*
+   * d( mu )/dmesh
+   */
+  
+  if ( d_mu != NULL && pd->e[R_MESH1] )
+    {
+      for ( b=0; b<VIM; b++)
+	{
+	  for ( j=0; j<mdofs; j++)
+	    {
+	      if(gammadot != 0.0 && Include_Visc_Sens )
+		{
+
+		  d_mu->X [b][j] =
+		    d_mu->gd * d_gd_dmesh [b][j] ;
+
+		}
+	      else
+		{
+		  d_mu->X [b][j] = 0.0;
+		}
+	    }
+	}
+    }
+  
+  return(mu);
+}
+
 
 int
 ls_modulate_viscosity ( double *mu1,

@@ -229,7 +229,7 @@ extern int Num_Var_Init_Mat[MAX_NUMBER_MATLS];	/* number of variables to overwri
 #define CONST_PHASE_FUNCTION 24
 #define CARREAU_WLF_CONC_EXP  25   /*  Carreau viscosity with WLF temperature 
 				      dependence and concentration shifting*/
-					
+#define BINGHAM_SUSPENSION  30     /* Suspension viscosity model with a yield stress */					
 #define FOAM_EPOXY    33
 #define BINGHAM_WLF    27         /* Bingham WLF viscosity model */
 #define SYLGARD    28         /* Sylgard viscosity model */

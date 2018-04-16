@@ -140,6 +140,11 @@ PROTO((GEN_NEWT_STRUCT *,               /* gn_local                          */
        VISCOSITY_DEPENDENCE_STRUCT *,   /* d_mu - viscosity dependence       */
        const int )); 			/* const. model      */
 
+EXTERN double bingham_suspension_viscosity  /* mm_viscosity.c                   */
+PROTO((GEN_NEWT_STRUCT *,                   /* gn_local                         */
+       dbl [DIM][DIM],	        	    /* gamma_dot - strain rate tensor   */
+       VISCOSITY_DEPENDENCE_STRUCT *,       /* d_mu - viscosity dependence      */
+       dbl )); 	                            /* Concentration                    */
 
 EXTERN int ls_modulate_viscosity
 PROTO  (( double *,                      /* Primary phase viscosity value */

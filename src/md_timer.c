@@ -77,7 +77,7 @@
 dbl
 ut(void)
 {
-  clock_t err;
+  /*  clock_t err;
   dbl u;
   static struct tms *tm = NULL;
   static long  tickPerSecond;
@@ -93,7 +93,7 @@ ut(void)
       fprintf(stderr, "error from times().\n");
       exit(-1);
     }
-  u  = ((dbl) (tm->tms_utime)) * secondsPerTick; 
+    u  = ((dbl) (tm->tms_utime)) * secondsPerTick; */ 
   return(MPI_Wtime());
 } /* END of routine ut */
 /*****************************************************************************/

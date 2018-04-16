@@ -137,14 +137,6 @@ user_post(dbl *param)		/* ptr to the user-defined parameter list */
 /*  if (mp->PorousMediaType == POROUS_UNSATURATED) */
 /*       post_value = pmv->r_pore; */
 
-  dbl MS[MAX_MODES][DIM][DIM];
-  dbl S_Tot[DIM][DIM];
-  dbl gamma[DIM][DIM];
-  dbl grad_v[DIM][DIM];
-  int a,b,i,j,m,n,mode;
-  dbl eta;
-  dbl s[DIM][DIM];
-  dbl exp_s[DIM][DIM];
   
   /*  for (a=0; a < 2; a++)
     {

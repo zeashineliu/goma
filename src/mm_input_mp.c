@@ -1508,7 +1508,11 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
   else if ( !strcmp(model_name, "HERSCHEL_BULKLEY") )
     {
       ConstitutiveEquation = HERSCHEL_BULKLEY;
-    } 
+    }
+  else if ( !strcmp(model_name, "BINGHAM_SUSPENSION") )
+    {
+      ConstitutiveEquation = BINGHAM_SUSPENSION;
+    }
   else if ( !strcmp(model_name, "BOND") )
     {
       ConstitutiveEquation = BOND;
@@ -1661,6 +1665,7 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
       ConstitutiveEquation == THERMAL ||
       ConstitutiveEquation == CURE ||
       ConstitutiveEquation == HERSCHEL_BULKLEY ||
+      ConstitutiveEquation == BINGHAM_SUSPENSION ||
       ConstitutiveEquation == CARREAU_WLF_CONC_PL ||
       ConstitutiveEquation == CARREAU_WLF_CONC_EXP ||
       ConstitutiveEquation == BOND ||
@@ -1713,6 +1718,7 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
      ConstitutiveEquation == SUSPENSION ||
      ConstitutiveEquation == FILLED_EPOXY ||
      ConstitutiveEquation == HERSCHEL_BULKLEY ||
+     ConstitutiveEquation == BINGHAM_SUSPENSION ||
      ConstitutiveEquation == CARREAU_WLF_CONC_PL ||
      ConstitutiveEquation == CARREAU_WLF_CONC_EXP )
     {
@@ -1954,7 +1960,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
 
   if(ConstitutiveEquation == BINGHAM  ||
      ConstitutiveEquation == BINGHAM_WLF  ||
-     ConstitutiveEquation == HERSCHEL_BULKLEY)
+     ConstitutiveEquation == HERSCHEL_BULKLEY ||
+     ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       model_read = look_for_mat_prop(imp, "Yield Stress", 
 				     &(gn_glob[mn]->tau_yModel), 
@@ -1981,7 +1988,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
   if(ConstitutiveEquation == SUSPENSION || 
      ConstitutiveEquation == POWERLAW_SUSPENSION || 
      ConstitutiveEquation == CARREAU_SUSPENSION || 
-     ConstitutiveEquation == FILLED_EPOXY)
+     ConstitutiveEquation == FILLED_EPOXY ||
+     ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       model_read = look_for_mat_prop(imp, "Suspension Maximum Packing", 
 				     &(gn_glob[mn]->maxpackModel), 
