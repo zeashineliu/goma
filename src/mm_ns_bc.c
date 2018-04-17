@@ -6402,7 +6402,7 @@ flow_n_dot_T_hydro_time(double func[DIM],
   press = b + (c - b)/2.;
   press += (c - b) * cos( 2. * M_PI * time / d) / 2.0;
   for (p = 0; p < pd->Num_Dim; p++) {
-    func[p] = -press * fv->normal[p];
+    func[p] = -press * fv->snormal[p];
   }
 } /* END of routine flow_n_dot_T_hydro_time                                  */
 /*****************************************************************************/
