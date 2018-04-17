@@ -750,7 +750,7 @@ rd_bc_specs(FILE *ifp,
         case QCONV_BC: 
 	case KIN_LEAK_BC:
 	case VNORM_LEAK_BC: 
-        case VELO_SLIP_EK_BC: 
+        case VELO_SLIP_EK_BC:
 	case LS_EIK_KIN_LEAK_BC: 
 	case SHEET_ENDSLOPE_BC:
 	case LS_EXTV_LATENT_BC: 
@@ -808,6 +808,7 @@ rd_bc_specs(FILE *ifp,
 	case SLOPE_BC: 
 	case VELO_TANGENT_EDGE_BC:
 	case VELO_TANGENT_EDGE_INT_BC:
+      	case FLOW_PRESSURE_TIME_BC:
         case SH_S11_WEAK_BC:
         case SH_S22_WEAK_BC:
 

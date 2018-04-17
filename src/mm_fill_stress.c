@@ -2473,7 +2473,7 @@ assemble_stress_log_conf(dbl tt,
   dbl s_dot[DIM][DIM];    
   dbl grad_s[DIM][DIM][DIM];
   dbl d_grad_s_dmesh[DIM][DIM][DIM][DIM][MDE];
-  dbl g[DIM][DIM], gt[DIM][DIM];
+  dbl gt[DIM][DIM];
 
   //Polymer viscosity
   dbl mup;
@@ -2571,7 +2571,6 @@ assemble_stress_log_conf(dbl tt,
     {
       for (b=0; b<VIM; b++)
 	{
-	  g[a][b]  = fv->G[a][b];
 	  gt[a][b] = fv->G[b][a];
 	}
     }

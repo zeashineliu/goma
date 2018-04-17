@@ -1048,6 +1048,12 @@ apply_integrated_bc(double x[],           /* Solution vector for the current pro
 			     bc->BC_Data_Float[0]);
 	  break;
 
+	case FLOW_PRESSURE_TIME_BC:
+	  flow_n_dot_T_hydro_time(func, d_func, 0., bc->BC_Data_Float[0],
+				  bc->BC_Data_Float[1], bc->BC_Data_Float[2],
+				  time_intermediate);
+	  break;
+	  
 	case LGR_FLOWRATE_BC:
 	  {
 	    int iAC = bc->BC_Data_Int[0];  /* need this index so we can retrieve the current LM value from augc */

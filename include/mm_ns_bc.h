@@ -356,6 +356,16 @@ PROTO((double [DIM],		/* func                                      */
        const double ,		/* c for pressure variation                  */
        const double ));		/* d - pressure variation                    */
 
+EXTERN void flow_n_dot_T_hydro_time
+PROTO((double [DIM],		/* func                                      */
+       double [DIM][MAX_VARIABLE_TYPES + MAX_CONC][MDE], /* d_func           */
+       const double ,		/* a for pressure variation                  */
+       const double ,		/* b = min pressure                          */
+       const double ,		/* c = max pressure                          */
+       const double,		/* d = period (cosine function)              */
+       const double ));         /* time_value: current time                  */
+
+
 EXTERN void flow_n_dot_T_var_density
 PROTO((double [DIM],            /* func                                      */
        double [DIM][MAX_VARIABLE_TYPES + MAX_CONC][MDE],/* d_func            */

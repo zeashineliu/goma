@@ -6353,6 +6353,59 @@ flow_n_dot_T_hydro(double func[DIM],
 /*****************************************************************************/
 /*****************************************************************************/
 
+void
+flow_n_dot_T_hydro_time(double func[DIM],
+			double d_func[DIM][MAX_VARIABLE_TYPES + MAX_CONC][MDE],
+			const double a,  /* set to zero                          */
+			const double b,  /* set to minimum pressure              */
+			const double c,  /* set to max pressure                  */
+			const double d,  /* set to period of sinusoidal function */
+			const double current_time)
+    
+    /************************************************************************
+     *
+     * flow_n_dot_T_hydro_time()
+     *
+     *  Function which calculates the contribution to a the normal stress
+     *  from a specified pressure along an interface. Modified from
+     *  flow_n_dot_T_hydro().
+     *  
+     *  The specified pressure is a sinusoidal pressure as
+     *  a function of time. The two floating point data inputs are
+     *  for amplitude (parameter c) and period (parameter d).
+     *
+     *    func[p] = - (b + ( c - b ) / 2.0 + ( c - b ) * cos (2 pi time / d) / 2.0)
+     ************************************************************************/
+{
+  int j, var, p, jvar;
+  double press;
+  double time = current_time;
+
+  if (af->Assemble_LSA_Mass_Matrix)
+      return;
+
+  if (af->Assemble_Jacobian) {
+    press = b + (c - b)/2.;
+    press += (c - b) * cos( 2. * M_PI * time / d ) / 2.0;
+    for (jvar = 0; jvar < ei->ielem_dim; jvar++) {
+      var = MESH_DISPLACEMENT1 + jvar;
+      if (pd->v[var]) {
+	for (j = 0; j < ei->dof[var]; j++) {
+	  for (p = 0; p < pd->Num_Dim; p++) {
+	    d_func[p][var][j] = -press * fv->dsnormal_dx[p][jvar][j];
+	  }
+	}
+      } // if (pd->v[var])
+    }
+  }
+
+  press = b + (c - b)/2.;
+  press += (c - b) * cos( 2. * M_PI * time / d) / 2.0;
+  for (p = 0; p < pd->Num_Dim; p++) {
+    func[p] = -press * fv->normal[p];
+  }
+} /* END of routine flow_n_dot_T_hydro_time                                  */
+/*****************************************************************************/
 
 void
 flow_n_dot_T_var_density(double func[DIM],
