@@ -1319,6 +1319,8 @@ if(mu <= 1.)
 
   return(mu);
 }
+
+
 double
 bingham_wlf_viscosity(struct Generalized_Newtonian *gn_local,
 		      dbl gamma_dot[DIM][DIM], /* strain rate tensor */
@@ -3352,13 +3354,12 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
   dbl d_gd_dmesh[DIM][MDE];     /* derivative of strain rate invariant 
 				   wrt mesh */ 
 
-  dbl val, dmudC;
+  dbl val, val2, dmudC;
   dbl mu = 0.;
   dbl mu0;
   dbl maxpack;
   dbl nexp;
-  dbl tau_y;
-  dbl offset;
+  dbl tau_y,fexp;
 
   vdofs = ei->dof[VELOCITY1];
   
@@ -3374,13 +3375,13 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
   mu0 = gn_local->mu0;
   nexp = gn_local->nexp;
   tau_y = gn_local->tau_y;
-  offset = 0.00001;
+  fexp = gn_local->fexp;
 
   if ( nexp > 0.0 || ( C > 0.0 && C < (0.90 * maxpack) ))
     {
       val = pow( 1.0 - C/maxpack, nexp);
       mu = mu0 * val;
-      mu += tau_y/(gammadot + offset);
+      mu += tau_y * (1. - exp( -fexp * gammadot )) / gammadot;
 
       /* d( mu )/dc */
 
@@ -3402,7 +3403,7 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
     }
   else if ( C <= 0. )
     {
-      mu = tau_y/(gammadot + offset) + mu0;
+      mu = mu0 + tau_y * (1. - exp( -fexp * gammadot )) / gammadot;
 
       /* d( mu )/dc */
 
@@ -3422,7 +3423,7 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
     {
       val = pow( 0.10, nexp);
       mu = mu0 * val;
-      mu += tau_y/(gammadot + offset);
+      mu += tau_y * (1. - exp( -fexp * gammadot )) / gammadot;
 
       /* d( mu )/dc */
 
@@ -3442,10 +3443,12 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
   /*
    * d( mu )/dv
    */
-  val = pow( gammadot + offset, 2.);
+  val = pow( gammadot, 2.);
+  val2 = exp( -fexp * gammadot );
   if ( d_mu != NULL )
     {
-      d_mu->gd = -tau_y / val;
+      d_mu->gd = -tau_y * (1 - val2) / val;
+      d_mu->gd += tau_y * fexp * val2 / gammadot;
     }
   
   if ( d_mu != NULL && pd->e[R_MOMENTUM1] )
