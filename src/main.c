@@ -77,6 +77,10 @@ extern void handle_ieee(void );
 #define _MAIN_C
 #include "goma.h"
 
+#ifdef FP_EXCEPT
+#include <fenv.h>
+#endif
+
 /*
  * Global variables defined here.
  */
@@ -210,6 +214,10 @@ main(int argc, char **argv)
   int           nclc = 0;		/* number of command line commands */
 
 /********************** BEGIN EXECUTION ***************************************/
+
+#ifdef FP_EXCEPT
+  feenableexcept ((FE_OVERFLOW | FE_DIVBYZERO | FE_INVALID));
+#endif
   
 /* assume number of commands is less than or equal to the number of 
  * arguments in the command line minus 1 (1st is program name) */

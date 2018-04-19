@@ -3303,7 +3303,8 @@ hydro_flux(struct Species_Conservation_Terms *st,
 
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
-     || gn->ConstitutiveEquation == POWERLAW_SUSPENSION)
+     || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       mu0 = gn->mu0; /* viscosity of pure fluid */
       rel_mu_denom = ( 1.0 - Y[w]/maxpack ) ;
@@ -3867,7 +3868,8 @@ suspension_balance(struct Species_Conservation_Terms *st,
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
      || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
-     || gn->ConstitutiveEquation == FILLED_EPOXY)
+     || gn->ConstitutiveEquation == FILLED_EPOXY
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       maxpack = gn->maxpack;
       mu0 = gn->mu0; /* viscosity of pure fluid */
@@ -4252,7 +4254,8 @@ particle_stress(dbl tau_p[DIM][DIM],                     /* particle stress */
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
      || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
-     || gn->ConstitutiveEquation == FILLED_EPOXY)
+     || gn->ConstitutiveEquation == FILLED_EPOXY
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       maxpack = gn->maxpack;
       mu0 = gn->mu0; /* viscosity of pure fluid */
@@ -4692,7 +4695,8 @@ divergence_particle_stress(dbl div_tau_p[DIM],               /* divergence of th
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
      || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
-     || gn->ConstitutiveEquation == FILLED_EPOXY)
+     || gn->ConstitutiveEquation == FILLED_EPOXY
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       maxpack = gn->maxpack;
       mu0 = gn->mu0; /* viscosity of pure fluid */
@@ -5243,7 +5247,8 @@ solidification_permeability(dbl h_elem_avg, /* average element size */
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
      || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
-     || gn->ConstitutiveEquation == FILLED_EPOXY)
+     || gn->ConstitutiveEquation == FILLED_EPOXY
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       maxpack = gn->maxpack;
     }
