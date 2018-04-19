@@ -1974,7 +1974,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
     }
 
   if( ConstitutiveEquation == BINGHAM ||
-      ConstitutiveEquation == BINGHAM_WLF)
+      ConstitutiveEquation == BINGHAM_WLF ||
+      ConstitutiveEquation == BINGHAM_SUSPENSION)
     {
       model_read = look_for_mat_prop(imp, "Yield Exponent", 
 				     &(gn_glob[mn]->fexpModel), 
