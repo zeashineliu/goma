@@ -10046,6 +10046,10 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	    case HYDRO:
 	      hydro_flux(st, w, tt, dt, hsquared);
 	      break;
+
+	    case HYDRO_NP:
+	      hydro_flux_NP(st, w);
+	      break;
 	 
 	    default:
 	      EH( -1, "Unknown Diffusivity Model.");
@@ -10783,7 +10787,7 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	    
 	  }
       }
-      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA )
+      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA)
       {
 	err = epoxy_dea_species_source(w, mp->u_species_source[w]);
 	st->MassSource[w]    =  mp->species_source[w];
@@ -10810,7 +10814,34 @@ get_continuous_species_terms(struct Species_Conservation_Terms *st,
 	  }
 	}
       }
-      else if (mp->SpeciesSourceModel[w]  == BUTLER_VOLMER)     /* added by KSC: 05/15/06 */
+      else if (mp->SpeciesSourceModel[w]  == EPOXY_DEA_NEW )
+      {
+	err = epoxy_dea_new_species_source(w, mp->u_species_source[w]);
+	st->MassSource[w]    =  mp->species_source[w];
+	if ( af->Assemble_Jacobian )
+	{
+	  var = TEMPERATURE;
+	  if(pd->v[var])
+	  {
+	    for ( j=0; j<ei->dof[var]; j++)
+	    {
+	      st->d_MassSource_dT[w][j]= mp->d_species_source[var]*bf[var]->phi[j];
+	    }
+	  }
+
+	  var = MASS_FRACTION;
+	  if (pd->v[MASS_FRACTION] )
+	  {
+	    var_offset = MAX_VARIABLE_TYPES + w;
+	    for ( j=0; j<ei->dof[var]; j++)
+	    {
+	      st->d_MassSource_dc[w][w] [j]=mp->d_species_source[var_offset]
+		  *bf[var]->phi[j];
+	    }
+	  }
+	}
+      }
+       else if (mp->SpeciesSourceModel[w]  == BUTLER_VOLMER)     /* added by KSC: 05/15/06 */
       {
         dbl dh[3], p[10];
         p[0] = w;
@@ -12994,11 +13025,11 @@ assemble_invariant ( double tt,	/* parameter to vary time integration from
 
   if(I2)
     {
-      gd = pow(0.5*I2,0.5);
+      gd = pow(0.5*I2,0.5)+ .001;
     }
   else
     {
-      gd = 0.;
+      gd = 0.001;
     }
   /*
    * Compute derivatives of 2nd invariant wrt velocities and displacements
@@ -13056,7 +13087,7 @@ assemble_invariant ( double tt,	/* parameter to vary time integration from
 		  
 		  if ( pd->e[eqn] & T_ADVECTION )
 		    {
-		      advection = -gd;
+		      advection = -(gd );
 		      advection *= wt_func * det_J * wt * h3;
 		      advection *= pd->etm[eqn][(LOG2_ADVECTION)];
 		    }
