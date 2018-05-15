@@ -12291,7 +12291,7 @@ setup_table_BC(FILE *ifp,
 
   if( BC_Type->BC_Name == TABLE_WICV_BC )
                 {BC_Type->table->columns = 3;}
-  else { BC_Type->table->columns = 2;}
+  else { BC_Type->table->columns = 3;}
 
   if ( fscanf(ifp, "%80s", input ) != 1 )
     {
@@ -14155,77 +14155,77 @@ rd_table_data(FILE *ifp, char *input, struct Data_Table *table , char *endlist)
    * Now sort the points from lowest to highest abscissa (Because people forget)
    */
 
-if((table_dim == 1 || table->interp_method == BILINEAR) && strcmp(table->f_name, "Saturation")!= 0 )  
-   /* don't sort 2d bc tables or saturation mp tables*/
+/* if((table_dim == 1 || table->interp_method == BILINEAR) && strcmp(table->f_name, "Saturation")!= 0 )   */
+/*    /\* don't sort 2d bc tables or saturation mp tables*\/ */
  
-  /* Personally, I don't think we should be sorting bilinear tables either
-	as this limits the type of tables we can read.  But for now, I'll 
-	leave it in. - RBS		*/
-    {
-      for ( i = 1; i<Num_Pnts; i++)
-	{
-	  p=table->t[i];
- 	  if(table_dim == 2) p2=table->t2[i];
-	  p3=table->f[i];
-          if((table->columns-table_dim) > 1)
-                        {p4=table->f[i+Num_Pnts];}
-	  j=i-1;
-	  while (j>=0 && (p<table->t[j]) )
-	    {
-	      table->t[j+1]=table->t[j]; table->t[j]=p;
- 	      if(table_dim == 2)
- 		{
- 		 table->t2[j+1]=table->t2[j]; table->t2[j]=p2;
- 		}
-	      table->f[j+1]=table->f[j]; table->f[j]=p3;
-              if((table->columns-table_dim) > 1)
-                        {
- 			 table->f[j+1+Num_Pnts]=table->f[j+Num_Pnts];
-                         table->f[j+Num_Pnts]=p4;
- 			}
- 	      if(( table->t[i] == table->t[j]) && table_dim == 1) 
-		{
-		  sprintf(err_msg, "\nMultivalued function detected in table :%s \n",table->f_name);
-		  EH(-1,err_msg);
-		}
-	      j--;
-	    }
+/*   /\* Personally, I don't think we should be sorting bilinear tables either */
+/* 	as this limits the type of tables we can read.  But for now, I'll  */
+/* 	leave it in. - RBS		*\/ */
+/*     { */
+/*       for ( i = 1; i<Num_Pnts; i++) */
+/* 	{ */
+/* 	  p=table->t[i]; */
+/*  	  if(table_dim == 2) p2=table->t2[i]; */
+/* 	  p3=table->f[i]; */
+/*           if((table->columns-table_dim) > 1) */
+/*                         {p4=table->f[i+Num_Pnts];} */
+/* 	  j=i-1; */
+/* 	  while (j>=0 && (p<table->t[j]) ) */
+/* 	    { */
+/* 	      table->t[j+1]=table->t[j]; table->t[j]=p; */
+/*  	      if(table_dim == 2) */
+/*  		{ */
+/*  		 table->t2[j+1]=table->t2[j]; table->t2[j]=p2; */
+/*  		} */
+/* 	      table->f[j+1]=table->f[j]; table->f[j]=p3; */
+/*               if((table->columns-table_dim) > 1) */
+/*                         { */
+/*  			 table->f[j+1+Num_Pnts]=table->f[j+Num_Pnts]; */
+/*                          table->f[j+Num_Pnts]=p4; */
+/*  			} */
+/*  	      if(( table->t[i] == table->t[j]) && table_dim == 1)  */
+/* 		{ */
+/* 		  sprintf(err_msg, "\nMultivalued function detected in table :%s \n",table->f_name); */
+/* 		  EH(-1,err_msg); */
+/* 		} */
+/* 	      j--; */
+/* 	    } */
 
-  	}	      
+/*   	}	       */
 
-      /* If 3 Columns then sort 2nd Column */
-      if(table->columns == 3 && table->interp_method == BILINEAR)
-	{
-	  ibegin=1;
-	  for(k=1;k<Num_Pnts;k++)
-	    {
-	      if((table->t[k-1] != table->t[k]) || (k==Num_Pnts-1) )
-		{
-		  if(k==Num_Pnts-1)
-		    {
-		      iend=Num_Pnts;
-		    }
-		    else
-		    {
-		      iend=k;
-		    }
-      		  for(i=ibegin;i<iend; i++)
-		    {
-		      p2=table->t2[i];
-		      p3=table->f[i];
-		      j=i-1;
-		      while (j>=ibegin-1 && (p2<table->t2[j]) )
-			{
-			  table->t2[j+1]=table->t2[j]; table->t2[j]=p2;
-			  table->f[j+1]=table->f[j]; table->f[j]=p3;
-			  j--;
-			}
-		    }
-		  ibegin=iend+1;
-		}
-	    }
-	}
-    }   /* if !BIQUAD */
+/*       /\* If 3 Columns then sort 2nd Column *\/ */
+/*       if(table->columns == 3 && table->interp_method == BILINEAR) */
+/* 	{ */
+/* 	  ibegin=1; */
+/* 	  for(k=1;k<Num_Pnts;k++) */
+/* 	    { */
+/* 	      if((table->t[k-1] != table->t[k]) || (k==Num_Pnts-1) ) */
+/* 		{ */
+/* 		  if(k==Num_Pnts-1) */
+/* 		    { */
+/* 		      iend=Num_Pnts; */
+/* 		    } */
+/* 		    else */
+/* 		    { */
+/* 		      iend=k; */
+/* 		    } */
+/*       		  for(i=ibegin;i<iend; i++) */
+/* 		    { */
+/* 		      p2=table->t2[i]; */
+/* 		      p3=table->f[i]; */
+/* 		      j=i-1; */
+/* 		      while (j>=ibegin-1 && (p2<table->t2[j]) ) */
+/* 			{ */
+/* 			  table->t2[j+1]=table->t2[j]; table->t2[j]=p2; */
+/* 			  table->f[j+1]=table->f[j]; table->f[j]=p3; */
+/* 			  j--; */
+/* 			} */
+/* 		    } */
+/* 		  ibegin=iend+1; */
+/* 		} */
+/* 	    } */
+/* 	} */
+/*     }   /\* if !BIQUAD *\/ */
 
 	/*   How about if we do some error checking here
 		i.e. check for duplicate abscissa values in 1D tables

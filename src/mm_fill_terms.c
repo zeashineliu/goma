@@ -16630,6 +16630,28 @@ interpolate_table( struct Data_Table *table,
   double *t, *t2, *t3, *f;
   double cee, phi[3],xleft,xright;
   int ngrid1,ngrid2,ngrid3;
+  dbl xdiff[2]={0.,0.};
+  dbl xdiff2[2]={0.,0.};
+  dbl xdiff_abs[2]={0.,0.};
+  dbl xdiff_min[2][4][2];
+  dbl xdiff2_min[2][4][2];
+  int itable[4][2],interp_skip=0;
+  int itable2[4]={0,0,0,0};
+  dbl xdiff_tmp[2];
+  //dbl xdiff_abs=0.,ydiff_abs=0.;
+  //dbl xdiff1_min=0.,xdiff2_min=0.,xdiff3_min=0.,xdiff4_min=0.;
+  //dbl ydiff=0.,ydiff1_min=0.,ydiff2_min=0.,ydiff3_min=0.,ydiff4_min=0.;
+  int i1=0, i2=0, i3=0, i4=0, j, m, n;
+  //int itable[4] = {0, 0, 0, 0};
+  double interp_table[4][5],aa,bb,cc,dd;
+  int NL=4;
+  int NRHS=1;
+  int INFO=0,LDA=4,LDB=4;
+  dbl A[NL*NL],sum2=0.,sum_min=0.;
+  dbl B[NL],table_xy[2]={0.,0.};
+  int IPIV[NL];
+  //dbl xdiff_tmp=0.,ydiff_tmp=0.;
+  int loop_again=0, iquad[4][2];
 
   N = table->tablelength - 1;
   t = table->t;
@@ -16804,7 +16826,352 @@ interpolate_table( struct Data_Table *table,
 
 
   case BILINEAR:  /* BILINEAR Interpolation Scheme */
-      /*Find Interval of Different Values of Abscissa #1*/
+
+    /* for (i=0; i<NL; i++) */
+    /*   { */
+    /* 	IPIV[i]=0; */
+    /*   } */
+    
+    /* for (i1=0; i1<4; i1++) */
+    /*   { */
+    /* 	for (i2=0; i2<5; i2++) */
+    /* 	  { */
+    /* 	    if (i2 == 0) */
+    /* 	      { */
+    /* 		interp_table[i1][i2] = 1.; */
+    /* 	      } */
+    /* 	    else */
+    /* 	      { */
+    /* 		interp_table[i1][i2]=0.; */
+    /* 	      } */
+    /* 	  } */
+    /*   } */
+
+    /* for (i1=0; i1 < 2; i1++) */
+    /*   { */
+    /* 	xdiff_tmp[i1] = 0; */
+    /* 	for (i2=0; i2 < 4; i2++) */
+    /* 	  { */
+    /* 	    iquad[i2][i1] = 0; */
+    /* 	    itable[i2][i1] = 0; */
+    /* 	    for (i3=0; i3 < 2; i3++) */
+    /* 	      { */
+    /* 		xdiff_min[i1][i2][i3] = 100.; */
+    /* 		xdiff2_min[i1][i2][i3] = 100.; */
+    /* 	      } */
+    /* 	  } */
+    /*   } */
+
+    /* // Loop over N+1, since N is set to number of rows - 1 */
+    /* // Searching for the two closest points in each quadrant */
+    /* // Quadrant I = x+, y+ */
+    /* // Quadrant II = x-, y+ */
+    /* // Quadrant III = x-, y- */
+    /* // Quadrant IV = x+, y- */
+    /* // We need one point in each quadrant, or else bilinear doesn't work very well. */
+    /* // We save two points in each quadrant in case one quadrant doesn't have a point from */
+    /* // the table. If two or three quadrants are missing points, we'll set the function to */
+    /* // the same value as the closest point to avoid an ill-fitting bilinear interpolation. */
+    
+    /* if ( N < 8 ) */
+    /*   { */
+    /* 	EH(-1, "Must have at least eight points for bilinear interpolation"); */
+    /*   } */
+    
+    /* for (i=0; i<N+1; i++) */
+    /*   { */
+    /* 	loop_again=1; */
+    /* 	table_xy[0]=t[i]; */
+    /* 	table_xy[1]=t2[i]; */
+    /* 	for (m = 0; m < 2; m++) */
+    /* 	  { */
+    /* 	    xdiff[m] = table_xy[m] - x[m]; */
+    /* 	    xdiff2[m] = xdiff[m]; */
+    /* 	    xdiff_abs[m] = fabs(xdiff[m]); */
+    /* 	    xdiff_tmp[m] = xdiff_abs[m]; */
+    /* 	  } */
+    /* 	j=0; */
+    /* 	i1 = i; */
+    /* 	i2 = i; */
+      /* 	while(loop_again) */
+      /* 	  { */
+      /* 	    j += 1; */
+      /* 	    xdiff_abs[0] = xdiff_tmp[0]; */
+      /* 	    xdiff_abs[1] = xdiff_tmp[1]; */
+      /* 	    xdiff[0] = xdiff2[0]; */
+      /* 	    xdiff[1] = xdiff2[1]; */
+      /* 	    i1 = i2; */
+      /* 	    // Quadrant 1, keep two points */
+      /* 	    if(xdiff[0] >= 0 && xdiff[1] >= 0) */
+      /* 	      { */
+      /* 		if(xdiff_abs[0] < xdiff_min[0][0][0] && xdiff_abs[1] < xdiff_min[1][0][0]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][0][0]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][0][0]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][0][0]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][0][0]; */
+      /* 		    i2 = itable[0][0]; */
+      /* 		    xdiff_min[0][0][0] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][0][0] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][0][0] = xdiff[0]; */
+      /* 		    xdiff2_min[1][0][0] = xdiff[1]; */
+      /* 		    itable[0][0] = i1; */
+      /* 		    // loop_again makes sure the point that's being overwritten isn't */
+      /* 		    // closer than another point */
+      /* 		    loop_again = 1; */
+      /* 		    // iquad keeps track if a point is found for specific quadrant */
+      /* 		    iquad[0][0]=1; */
+      /* 		  } */
+      /* 		else if(xdiff_abs[0] < xdiff_min[0][0][1] && xdiff_abs[1] < xdiff_min[1][0][1]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][0][1]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][0][1]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][0][1]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][0][1]; */
+      /* 		    i2 = itable[0][1]; */
+      /* 		    xdiff_min[0][0][1] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][0][1] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][0][1] = xdiff[0]; */
+      /* 		    xdiff2_min[1][0][1] = xdiff[1]; */
+      /* 		    itable[0][1] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[0][1]=1; */
+      /* 		  } */
+      /* 		else */
+      /* 		  { */
+      /* 		    loop_again=0; */
+      /* 		  } */
+      /* 	      } */
+      /* 	    // Quadrant 2, keep two points */
+      /* 	    else if(xdiff[0] < 0 && xdiff[1] > 0) */
+      /* 	      { */
+      /* 		if(xdiff_abs[0] < xdiff_min[0][1][0] && xdiff_abs[1] < xdiff_min[1][1][0]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][1][0]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][1][0]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][1][0]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][1][0]; */
+      /* 		    i2 = itable[1][0]; */
+      /* 		    xdiff_min[0][1][0] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][1][0] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][1][0] = xdiff[0]; */
+      /* 		    xdiff2_min[1][1][0] = xdiff[1]; */
+      /* 		    itable[1][0] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[1][0]=1; */
+      /* 		  } */
+      /* 		else if(xdiff_abs[0] < xdiff_min[0][1][1] && xdiff_abs[1] < xdiff_min[1][1][1]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][1][1]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][1][1]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][1][1]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][1][1]; */
+      /* 		    i2 = itable[1][1]; */
+      /* 		    xdiff_min[0][1][1] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][1][1] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][1][1] = xdiff[0]; */
+      /* 		    xdiff2_min[1][1][1] = xdiff[1]; */
+      /* 		    itable[1][1] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[1][1]=1; */
+      /* 		  } */
+      /* 		else */
+      /* 		  { */
+      /* 		    loop_again=0; */
+      /* 		  } */
+      /* 	      } */
+      /* 	    // Quadrant 3, keep two points */
+      /* 	    else if(xdiff[0] < 0 && xdiff[1] < 0) */
+      /* 	      { */
+      /* 		if(xdiff_abs[0] < xdiff_min[0][2][0] && xdiff_abs[1] < xdiff_min[1][2][0]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][2][0]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][2][0]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][2][0]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][2][0]; */
+      /* 		    i2 = itable[2][0]; */
+      /* 		    xdiff_min[0][2][0] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][2][0] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][2][0] = xdiff[0]; */
+      /* 		    xdiff2_min[1][2][0] = xdiff[1]; */
+      /* 		    itable[2][0] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[2][0]=1; */
+      /* 		  } */
+      /* 		else if(xdiff_abs[0] < xdiff_min[0][2][1] && xdiff_abs[1] < xdiff_min[1][2][1]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][2][1]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][2][1]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][2][1]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][2][1]; */
+      /* 		    i2 = itable[2][1]; */
+      /* 		    xdiff_min[0][2][1] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][2][1] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][2][1] = xdiff[0]; */
+      /* 		    xdiff2_min[1][2][1] = xdiff[1]; */
+      /* 		    itable[2][1] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[2][1]=1; */
+      /* 		  } */
+      /* 		else */
+      /* 		  { */
+      /* 		    loop_again=0; */
+      /* 		  } */
+      /* 	      } */
+      /* 	    // Quadrant 4, keep two points */
+      /* 	    else if(xdiff[0] > 0 && xdiff[1] < 0) */
+      /* 	      { */
+      /* 		if(xdiff_abs[0] < xdiff_min[0][3][0] && xdiff_abs[1] < xdiff_min[1][3][0]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][3][0]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][3][0]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][3][0]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][3][0]; */
+      /* 		    i2 = itable[3][0]; */
+      /* 		    xdiff_min[0][3][0] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][3][0] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][3][0] = xdiff[0]; */
+      /* 		    xdiff2_min[1][3][0] = xdiff[1]; */
+      /* 		    itable[3][0] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[3][0]=1; */
+      /* 		  } */
+      /* 		else if(xdiff_abs[0] < xdiff_min[0][3][1] && xdiff_abs[1] < xdiff_min[1][3][1]) */
+      /* 		  { */
+      /* 		    xdiff_tmp[0] = xdiff_min[0][3][1]; */
+      /* 		    xdiff_tmp[1] = xdiff_min[1][3][1]; */
+      /* 		    xdiff2[0] = xdiff2_min[0][3][1]; */
+      /* 		    xdiff2[1] = xdiff2_min[1][3][1]; */
+      /* 		    i2 = itable[3][1]; */
+      /* 		    xdiff_min[0][3][1] = xdiff_abs[0]; */
+      /* 		    xdiff_min[1][3][1] = xdiff_abs[1]; */
+      /* 		    xdiff2_min[0][3][1] = xdiff[0]; */
+      /* 		    xdiff2_min[1][3][1] = xdiff[1]; */
+      /* 		    itable[3][1] = i1; */
+      /* 		    loop_again = 1; */
+      /* 		    iquad[3][1]=1; */
+      /* 		  } */
+      /* 		else */
+      /* 		  { */
+      /* 		    loop_again=0; */
+      /* 		  } */
+      /* 	      } */
+      /* 	    if( j > 30) */
+      /* 	      { */
+      /* 		break; */
+      /* 	      } */
+      /* 	  } */
+      /* } */
+
+    /* if (iquad[0][0]==1 && iquad[1][0]==1 && iquad[2][0]==1 && iquad[3][0]==1) */
+    /*   { */
+    /* 	for( i=0; i < 4; i++) */
+    /* 	  { */
+    /* 	    itable2[i] = itable[i][0]; */
+    /* 	  } */
+    /*   } */
+    /* else if ((iquad[0][0] + iquad[1][0] + iquad[2][0] + iquad[3][0]) == 3) */
+    /*   { */
+    /* 	// Case if point is missing from one quadrant */
+    /* 	for ( i=0; i < 4; i++) */
+    /* 	  { */
+    /* 	    if(iquad[i][0] == 0) */
+    /* 	      { */
+    /* 		if( i != 0 ) */
+    /* 		  { */
+    /* 		    itable2[i] = itable[0][1]; */
+    /* 		  } */
+    /* 		else */
+    /* 		  { */
+    /* 		    itable2[i] = itable[1][1]; */
+    /* 		  } */
+    /* 	      } */
+    /* 	    else */
+    /* 	      { */
+    /* 		itable2[i] = itable[i][0]; */
+    /* 	      } */
+    /* 	  } */
+    /*   } */
+    /* else */
+    /*   { */
+    /* 	// Case if points are missing from two quadrants */
+    /* 	// Find closest point, and set function at interpolation point */
+    /* 	// equal to that point */
+    /* 	interp_skip = 1; */
+    /*   } */
+	        
+    /* // Fill in matrix to solve linear problem f = a + b*x + c*y + d*x*y over */
+    /* // four closest points */
+    /* for (i=0; i<4; i++) */
+    /*   { */
+    /* 	interp_table[i][1] = t[itable2[i]]; */
+    /* 	interp_table[i][2] = t2[itable2[i]]; */
+    /* 	interp_table[i][3] = t[itable2[i]]*t2[itable2[i]]; */
+    /* 	interp_table[i][4] = f[itable2[i]]; */
+    /*   } */
+
+    /* // Prepare matrices for FORTRAN by switching rows and columns, */
+    /* // and putting in 1-D matrix */
+    /* for (j=0; j<4; j++) */
+    /*   { */
+    /* 	B[j] = interp_table[j][4]; */
+    /* 	for (i=0; i<4; i++) */
+    /* 	  { */
+    /* 	    A[i + j*4] = interp_table[i][j]; */
+    /* 	  } */
+    /*   } */
+
+    /* if(!interp_skip) */
+    /*   { */
+    /* 	// Call function DGESV to solve linear problem */
+    /* 	(void) dgesv_(&NL, &NRHS, A, &LDA, IPIV, B, &LDB, &INFO); */
+
+    /* 	aa = B[0]; */
+    /* 	bb = B[1]; */
+    /* 	cc = B[2]; */
+    /* 	dd = B[3]; */
+
+    /* 	// Perform Bilinear integration f = a + b*x + c*y + d*x*y */
+    /* 	func = aa + bb*x[0] + cc*x[1] + dd*x[0]*x[1]; */
+
+    /* 	table->slope[0]=bb; */
+    /* 	table->slope[1]=cc; */
+
+    /* 	if(dfunc_dx != NULL) */
+    /* 	  { */
+    /* 	    dfunc_dx[0] = bb + dd*x[1]; */
+    /* 	    dfunc_dx[1] = cc + dd*x[0]; */
+    /* 	  } */
+    /*   } */
+    /* else */
+    /*   { */
+    /* 	sum_min=100.; */
+    /* 	i1=0; */
+    /* 	for( i = 0; i<4; i++) */
+    /* 	  { */
+    /* 	    for ( j=0; j<2; j++) */
+    /* 	      { */
+    /* 		if ( iquad[i][j] = 1 ) */
+    /* 		  { */
+    /* 		    sum2 = xdiff_min[0][i][j]+xdiff_min[1][i][j]; */
+    /* 		    if (sum2 < sum_min) */
+    /* 		      { */
+    /* 			i1 = itable[i][j]; */
+    /* 		      } */
+    /* 		  } */
+    /* 	      } */
+    /* 	  } */
+    /* 	func = f[i1]; */
+    /* 	table->slope[0]=0.; */
+    /* 	table->slope[1]=0.; */
+    /* 	if(dfunc_dx != NULL) */
+    /* 	  { */
+    /* 	    dfunc_dx[0] = 0.; */
+    /* 	    dfunc_dx[1] = 0.; */
+    /* 	  } */
+    /*   } */
+    
+    
       iinter=0;
       for(i=0;i<N;i++)
       {
@@ -16844,7 +17211,7 @@ interpolate_table( struct Data_Table *table,
 	   {
 		dfunc_dx[0] = table->slope[0];
 		dfunc_dx[1] = table->slope[1];
-	   }
+		}
       break;
 
    case TRILINEAR:      /* trilinear lagrangian interpolation scheme */

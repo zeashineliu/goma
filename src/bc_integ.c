@@ -1523,12 +1523,12 @@ apply_integrated_bc(double x[],           /* Solution vector for the current pro
 			    delta_t, theta);  
 	  break;
 
-	case YUSER_BC:
+	  case YUSER_BC:
 	  yuser_surf( func, d_func,
 		      BC_Types[bc_input_id].BC_Data_Int[0], 
 		      BC_Types[bc_input_id].u_BC,
 		      time_intermediate);
-	  break;
+		      break;
 	    
 	case YFLUX_ALLOY_BC:
 	  mass_flux_alloy_surf( func, d_func,

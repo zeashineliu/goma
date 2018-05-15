@@ -3163,7 +3163,7 @@ rd_bc_specs(FILE *ifp,
 
         case TABLE_WICV_BC:
         case TABLE_WICS_BC:
-		case TABLE_BC:
+	case TABLE_BC:
 	  /*
 	   * Read in boundary data as a Data_Table structure
 	   */

@@ -608,7 +608,7 @@ yuser_surf(double *func,
   double radius, phiw, phim, xi, alpha;
   */
 /* Comment this out FIRST!!!!! */
-   EH(-1,"No Y_USER model implemented"); 
+  //EH(-1,"No Y_USER model implemented"); 
 
 /* Add your function and sensitivities here */
 
@@ -632,6 +632,38 @@ yuser_surf(double *func,
 /* 	}  */
 /*     }  */
 
+  dbl h;
+  int var;
+  int j=0;
+  dbl x,y,kernal,d;
+
+  h = u_bc[0];
+  x = fv->x[0];
+  y = fv->x[1];
+  
+  kernal = x * x + y * y;
+  d = 0.026667 / h;
+  kernal /= d;
+
+  var = MASS_FRACTION;
+  
+  if (kernal < 0.)
+    {
+      EH(-1, "Square root of negative number in YUSER function");
+    }
+  else
+    {
+      *func = h - sqrt(kernal);
+
+      if (pd->v[var])
+	{
+	  for (j=0; j<ei->dof[var]; j++)
+	    {
+	      d_func[0][MAX_VARIABLE_TYPES + species][j] = 0.;
+	    }
+	}
+    }
+  
   return;
 } /* END of routine yuser_surf                                              */
 /****************************************************************************/
