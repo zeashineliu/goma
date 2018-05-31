@@ -1625,7 +1625,7 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
 
   dbl phi_j = 0.0;
 
-  dbl maxpack = 0.0;  /*  ERROR !!! maxpack is never set before use !!!! */
+  dbl maxpack;  /*  ERROR !!! maxpack is never set before use !!!! */
 
   dbl div_gdYVQVt[DIM]; /* div(gammadot * Y * (V Q Vt)) */
   dbl VQVt_grad_mu[DIM]; /* (V Q V^t) . grad(mu) */
@@ -1660,6 +1660,8 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
   grad_Y = fv->grad_c;
   grad_gammadot = fv->grad_SH;
   gammadot = fv->SH;
+
+  maxpack = gn->maxpack;
   
   dmu_dY = &(mp->d_viscosity[MAX_VARIABLE_TYPES]);
   d2mu_dY2 = &(mp->d2_viscosity[MAX_VARIABLE_TYPES]);

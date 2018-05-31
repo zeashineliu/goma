@@ -1513,6 +1513,10 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
     {
       ConstitutiveEquation = BINGHAM_SUSPENSION;
     }
+  else if ( !strcmp(model_name, "CASSON") )
+    {
+      ConstitutiveEquation = CASSON;
+    }
   else if ( !strcmp(model_name, "BOND") )
     {
       ConstitutiveEquation = BOND;
@@ -1669,7 +1673,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
       ConstitutiveEquation == CARREAU_WLF_CONC_PL ||
       ConstitutiveEquation == CARREAU_WLF_CONC_EXP ||
       ConstitutiveEquation == BOND ||
-      ConstitutiveEquation == FOAM_EPOXY)
+      ConstitutiveEquation == FOAM_EPOXY ||
+      ConstitutiveEquation == CASSON)
     {
       model_read = look_for_mat_prop(imp, "Low Rate Viscosity", 
 				     &(gn_glob[mn]->mu0Model), 
@@ -1975,7 +1980,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
 
   if( ConstitutiveEquation == BINGHAM ||
       ConstitutiveEquation == BINGHAM_WLF ||
-      ConstitutiveEquation == BINGHAM_SUSPENSION)
+      ConstitutiveEquation == BINGHAM_SUSPENSION ||
+      ConstitutiveEquation == CASSON)
     {
       model_read = look_for_mat_prop(imp, "Yield Exponent", 
 				     &(gn_glob[mn]->fexpModel), 
@@ -1990,7 +1996,8 @@ rd_mp_specs(FILE *imp, char input[], int mn, char *echo_file)
      ConstitutiveEquation == POWERLAW_SUSPENSION || 
      ConstitutiveEquation == CARREAU_SUSPENSION || 
      ConstitutiveEquation == FILLED_EPOXY ||
-     ConstitutiveEquation == BINGHAM_SUSPENSION)
+     ConstitutiveEquation == BINGHAM_SUSPENSION ||
+     ConstitutiveEquation == CASSON)
     {
       model_read = look_for_mat_prop(imp, "Suspension Maximum Packing", 
 				     &(gn_glob[mn]->maxpackModel), 

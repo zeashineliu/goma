@@ -3376,6 +3376,10 @@ hydro_flux(struct Species_Conservation_Terms *st,
   d_grad_gd_dmesh = fv->d_grad_SH_dmesh;
   maxpack = gn->maxpack;
   nexp = gn->nexp ;
+  if(gn->ConstitutiveEquation == CASSON)
+    {
+      nexp = -1.82;
+    }
 
   dim = pd->Num_Dim;
     
@@ -3408,7 +3412,8 @@ hydro_flux(struct Species_Conservation_Terms *st,
   if(gn->ConstitutiveEquation == SUSPENSION
      || gn->ConstitutiveEquation == CARREAU_SUSPENSION
      || gn->ConstitutiveEquation == POWERLAW_SUSPENSION
-     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION)
+     || gn->ConstitutiveEquation == BINGHAM_SUSPENSION
+     || gn->ConstitutiveEquation == CASSON)
     {
       mu0 = gn->mu0; /* viscosity of pure fluid */
       rel_mu_denom = ( 1.0 - Y[w]/maxpack ) ;

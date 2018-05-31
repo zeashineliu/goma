@@ -645,6 +645,11 @@ viscosity(struct Generalized_Newtonian *gn_local,
       mu = bingham_suspension_viscosity(gn_local, gamma_dot, d_mu,
 					fv->c[gn_local->sus_species_no]);
     }
+  else if (gn_local->ConstitutiveEquation == CASSON)
+    {
+      mu = casson_viscosity(gn_local, gn_local->sus_species_no, gamma_dot, d_mu,
+			    fv->c[gn_local->sus_species_no]);
+    }
   else
     {
       EH(-1,"Unrecognized viscosity model for non-Newtonian fluid");
@@ -3497,6 +3502,216 @@ bingham_suspension_viscosity(struct Generalized_Newtonian *gn_local,
   
   return(mu);
 }
+
+/* Casson Constitutive Model for viscosity */
+/* Blood viscosity modeled according to Apostolidis and Beris, J. Rheology (2014) */
+double
+casson_viscosity(struct Generalized_Newtonian *gn_local,
+		        int species,             /* species number */
+		        dbl gamma_dot[DIM][DIM], /* strain rate tensor */
+		        VISCOSITY_DEPENDENCE_STRUCT *d_mu,
+		        dbl C )  /* Concentration */
+{
+  int a, b, w;
+  int mdofs=0,vdofs;
+  int var;
+  dbl c[4];
+  
+  int i, j;
+
+  dbl gammadot;	                /* strain rate invariant */ 
+
+  dbl d_gd_dv[DIM][MDE];        /* derivative of strain rate invariant 
+				   wrt velocity */ 
+  dbl d_gd_dmesh[DIM][MDE];     /* derivative of strain rate invariant 
+				   wrt mesh */ 
+
+  dbl val, val2, dmudC, d2mudC;
+  dbl mu = 0.;
+  dbl mu0,y1,y2;
+  dbl cf;                       /* cf = fibrinogen concentration, usually between 0.1 to 0.4 g/dL */
+  dbl Hct_c;                    /* Critical hematocrit concentration (red blood cell volume fraction) */
+  dbl Hct;                      /* Hematocrit (red blood cell volume fraction)    */
+  dbl tau_y,fexp,d_mu0_dC,d_tau_y_dC;
+  dbl d2_mu0_dC, d2_tau_y_dC, dval_dC, d2val_dC;
+
+  vdofs = ei->dof[VELOCITY1];
+  
+  if ( pd->e[R_MESH1] )
+    {
+      mdofs = ei->dof[R_MESH1];
+    }
+  
+  for (a=0; a<DIM; a++)
+    {
+      mp->d_viscosity[VELOCITY1+a] = 0.0;
+      mp->d2_viscosity[VELOCITY1+a] = 0.0;
+      mp->d_viscosity[MESH_DISPLACEMENT1+a] = 0.0;
+      mp->d2_viscosity[MESH_DISPLACEMENT1+a] = 0.0;
+    }
+  for (w=0; w<pd->Num_Species_Eqn; w++)
+    {
+      mp->d_viscosity[MAX_VARIABLE_TYPES + w] = 0.0;
+      mp->d2_viscosity[MAX_VARIABLE_TYPES + w] = 0.0;
+    }
+  
+  calc_shearrate(&gammadot, gamma_dot, d_gd_dv, d_gd_dmesh);
+  
+  fexp = gn_local->fexp;
+  Hct = C;
+  cf = 0.25;
+  
+  c[0] = 0.3126;
+  c[1] = -0.468;
+  c[2] = 0.1764;
+  
+  if( cf < 0.75 )
+    {
+      Hct_c = c[0]*cf*cf + c[1]*cf + c[2];
+    }
+  else
+    {
+      Hct_c = 0.0012;
+    }
+
+  c[0] = 0.5084;
+  c[1] = 0.4517;
+
+  if( Hct > Hct_c )
+    {
+      y1 = Hct - Hct_c;
+      y2 = c[0]*cf + c[1];
+      tau_y = 0.1*(y1*y1 * y2*y2);
+      d_tau_y_dC = 0.1*(2.*y1 * y2*y2);
+      d2_tau_y_dC = 0.1*2.* y2*y2;
+    }
+  else
+    {
+      tau_y = 0.;
+      d_tau_y_dC = 0.;
+      d2_tau_y_dC = 0.;
+    }
+
+  c[0] = 0.00167;
+  c[1] = 2.0703;
+  c[2] = 3.7222;
+  c[3] = -7.0276;
+  y1 = exp(c[3]*(1. - 296.16/310.15));
+  
+  mu0 = c[0] * (1. + c[1]*Hct + c[2]*Hct*Hct) * y1;
+  d_mu0_dC = c[0]*(c[1] + 2. * c[2] * Hct) * y1;
+  d2_mu0_dC = c[0] * 2. * c[2] * y1;
+  
+  val2 = tau_y * (1. - exp( -fexp * gammadot) ) / gammadot;
+  val = sqrt(val2) + sqrt(mu0);
+  mu = pow( val, 2.0 );
+
+  var = MASS_FRACTION;
+  if ( d_mu != NULL )
+    {
+      y1 = (1. - exp( -fexp * gammadot) ) / gammadot;
+      if( tau_y > 1.e-15 )
+	{
+	  /* dmu_dC */
+	  dval_dC = 0.5*pow(val2, -0.5) * y1 * d_tau_y_dC + 0.5*pow(mu0, -0.5)*d_mu0_dC;
+	  dmudC = 2.*val * dval_dC;
+	  mp->d_viscosity[MAX_VARIABLE_TYPES+species] = dmudC;
+
+	  /* d2mu_dC2 */
+	  d2val_dC = -0.25*pow(val2, -1.5) * y1 * y1 * d_tau_y_dC * d_tau_y_dC
+	    + 0.5*pow(val2, -0.5) * y1 * d2_tau_y_dC -0.25*pow(mu0, -1.5) * d_mu0_dC*d_mu0_dC;
+	  d2val_dC += 0.5*pow(mu0, -0.5) * d2_mu0_dC;
+	  d2mudC = 2. * dval_dC * dval_dC + 2.*val * d2val_dC;
+	  mp->d2_viscosity[MAX_VARIABLE_TYPES+species] = d2mudC; 
+	}
+      else
+	{
+	  /* dmu_dC */
+	  dval_dC = 0.5*pow(mu0, -0.5)*d_mu0_dC;
+	  dmudC = 2.*val * dval_dC;
+	  mp->d_viscosity[MAX_VARIABLE_TYPES+species] = dmudC;
+
+	  /* d2mu_dC2 */
+	  d2val_dC = -0.25*pow(mu0, -1.5) * d_mu0_dC*d_mu0_dC
+	    + 0.5*pow(mu0, -0.5) * d2_mu0_dC;
+	  d2mudC = 2. * dval_dC * dval_dC + 2*val * d2val_dC;
+	  mp->d2_viscosity[MAX_VARIABLE_TYPES+species] = d2mudC;
+	  
+	}
+      
+      for( w=0; w < pd->Num_Species_Eqn ; w++)
+	{
+	  for ( j=0; j < ei->dof[var]; j++)
+	    {
+	      d_mu->C[w][j] = dmudC * bf[var]->phi[j];
+	    }
+	}
+    }
+  
+  /*
+   * d( mu )/dv
+   */
+  if ( d_mu != NULL )
+    {
+      y1 = exp(-fexp*gammadot);
+      if( tau_y > 1.e-15 )
+	{
+	  d_mu->gd = 2.*val * (0.5*tau_y*pow(val2, -0.5) *
+			       (fexp*y1/gammadot - (1.-y1)/(gammadot*gammadot)));
+	}
+      else
+	{
+	  d_mu->gd = 0.;
+	}
+    }
+
+  if ( d_mu != NULL && pd->e[R_MOMENTUM1] )
+    {
+      for ( a=0; a<VIM; a++)
+        {
+          for ( i=0; i<vdofs; i++)
+	    {
+	      if(gammadot != 0.0 && Include_Visc_Sens )
+	        {
+	          d_mu->v[a][i] =
+		    d_mu->gd * d_gd_dv[a][i] ;
+	        }
+	      else
+	        {
+	          d_mu->v[a][i] = 0.0 ;
+	        }
+	    }
+        }
+    }
+
+  /*
+   * d( mu )/dmesh
+   */
+  
+  if ( d_mu != NULL && pd->e[R_MESH1] )
+    {
+      for ( b=0; b<VIM; b++)
+	{
+	  for ( j=0; j<mdofs; j++)
+	    {
+	      if(gammadot != 0.0 && Include_Visc_Sens )
+		{
+
+		  d_mu->X [b][j] =
+		    d_mu->gd * d_gd_dmesh [b][j] ;
+
+		}
+	      else
+		{
+		  d_mu->X [b][j] = 0.0;
+		}
+	    }
+	}
+    }
+  
+  return(mu);
+}
+
 
 
 int
