@@ -202,13 +202,13 @@ assemble_qtensor(dbl *el_length) /* 2 x approximate element length scales */
       for(i = 0; i < DIM; i++)
 	for(j = 0; j < DIM; j++)
 	  E[i][j] = fv->grad_v[i][j] + fv->grad_v[j][i];
-      if(print)
+      /*if(print)
 	{
 	  printf("BASE LOCATION:\n");
 	  printf("    + % 10.4g % 10.4g % 10.4g +\n", E[0][0], E[0][1], E[0][2]);
 	  printf("E = | % 10.4g % 10.4g % 10.4g |\n", E[1][0], E[1][1], E[1][2]);
 	  printf("    + % 10.4g % 10.4g % 10.4g +\n", E[2][0], E[2][1], E[2][2]);
-	}
+	  } */
       find_super_special_eigenvector(E, vort_dir_local, &tmp, print);
 
       for(i = 0; i < DIM; i++) {
@@ -253,7 +253,7 @@ assemble_qtensor(dbl *el_length) /* 2 x approximate element length scales */
 	  gd_delta = sqrt(0.5 * gd_delta);
 	  */
 
-	  if(!bias_eigenvector_to(vort_dir_delta, vort_dir_local) || print)
+	  /*if(!bias_eigenvector_to(vort_dir_delta, vort_dir_local) || print)
 	    {
 	      printf("DELTA %d LOCATION:\n", p);
 	      printf("             x = [% 10.4g, % 10.4g % 10.4g]\n",
@@ -273,7 +273,7 @@ assemble_qtensor(dbl *el_length) /* 2 x approximate element length scales */
 					     fv->v[2]*fv->v[2]));
 	      printf("sh = % 10.4g, gd = % 10.4g, gd_delta = % 10.4g\n",
 		     fv->SH, gd_local, gd_delta);
-	    }
+		     }*/
 
 	  for(i = 0; i < DIM; i++)
 	        d_vort_dir_d_x[i][p] = (vort_dir_delta[p] - vort_dir_local[p])
@@ -311,7 +311,7 @@ assemble_qtensor(dbl *el_length) /* 2 x approximate element length scales */
       gd[ip] = gd_local;
       */
 
-      if(print)
+      /*if(print)
 	{
 	  printf("    d/dq[0] = [% 10.4g % 10.4g % 10.4g]\n",
 		  d_vort_dir_d_x[0][0], d_vort_dir_d_x[1][0], d_vort_dir_d_x[2][0]);
@@ -321,14 +321,14 @@ assemble_qtensor(dbl *el_length) /* 2 x approximate element length scales */
 		  d_vort_dir_d_x[0][2], d_vort_dir_d_x[1][2], d_vort_dir_d_x[2][2]);
 	  printf("div_qtensor = [% 10.4g % 10.4g % 10.4g]\n",
 		 div_qtensor[ip][0], div_qtensor[ip][1], div_qtensor[ip][2]);
-	  /*
+	  
 	  printf("    grad_gd = [% 10.4g % 10.4g % 10.4g]\n",
 		 grad_gd[ip][0], grad_gd[ip][1], grad_gd[ip][2]);
 	  printf("    grad_SH = [% 10.4g % 10.4g % 10.4g]\n",
 		 fv->grad_SH[0], fv->grad_SH[1], fv->grad_SH[2]);
-	  */
+	  
 	  printf( "\n");
-	}
+	}*/
     }
 
   return;
@@ -380,13 +380,13 @@ assemble_qtensor_vort(dbl *el_length) /* 2 x approximate element length scales *
       for(i = 0; i < DIM; i++)
 	for(j = 0; j < DIM; j++)
 	  E[i][j] = fv->grad_v[i][j] + fv->grad_v[j][i];
-      if(print)
+      /*if(print)
 	{
 	  printf("BASE LOCATION:\n");
 	  printf("    + % 10.4g % 10.4g % 10.4g +\n", E[0][0], E[0][1], E[0][2]);
 	  printf("E = | % 10.4g % 10.4g % 10.4g |\n", E[1][0], E[1][1], E[1][2]);
 	  printf("    + % 10.4g % 10.4g % 10.4g +\n", E[2][0], E[2][1], E[2][2]);
-	}
+	  }*/
       find_super_special_eigenvector(E, vort_dir_local, &tmp, print);
 
       for(i = 0; i < DIM; i++) {
@@ -431,7 +431,7 @@ assemble_qtensor_vort(dbl *el_length) /* 2 x approximate element length scales *
 	  gd_delta = sqrt(0.5 * gd_delta);
 	  */
 
-	  if(!bias_eigenvector_to(vort_dir_delta, vort_dir_local) || print)
+	  /*if(!bias_eigenvector_to(vort_dir_delta, vort_dir_local) || print)
 	    {
 	      printf("DELTA %d LOCATION:\n", p);
 	      printf("             x = [% 10.4g, % 10.4g % 10.4g]\n",
@@ -451,7 +451,7 @@ assemble_qtensor_vort(dbl *el_length) /* 2 x approximate element length scales *
 					     fv->v[2]*fv->v[2]));
 	      printf("sh = % 10.4g, gd = % 10.4g, gd_delta = % 10.4g\n",
 		     fv->SH, gd_local, gd_delta);
-	    }
+		     }*/
 
 	  for(i = 0; i < DIM; i++)
 	        d_vort_dir_d_x[i][p] = (vort_dir_delta[p] - vort_dir_local[p])
@@ -489,7 +489,7 @@ assemble_qtensor_vort(dbl *el_length) /* 2 x approximate element length scales *
       gd[ip] = gd_local;
       */
 
-      if(print)
+      /*if(print)
 	{
 	  printf("    d/dq[0] = [% 10.4g % 10.4g % 10.4g]\n",
 		  d_vort_dir_d_x[0][0], d_vort_dir_d_x[1][0], d_vort_dir_d_x[2][0]);
@@ -499,14 +499,14 @@ assemble_qtensor_vort(dbl *el_length) /* 2 x approximate element length scales *
 		  d_vort_dir_d_x[0][2], d_vort_dir_d_x[1][2], d_vort_dir_d_x[2][2]);
 	  printf("div_qtensor = [% 10.4g % 10.4g % 10.4g]\n",
 		 div_qtensor[ip][0], div_qtensor[ip][1], div_qtensor[ip][2]);
-	  /*
+	  
 	  printf("    grad_gd = [% 10.4g % 10.4g % 10.4g]\n",
 		 grad_gd[ip][0], grad_gd[ip][1], grad_gd[ip][2]);
 	  printf("    grad_SH = [% 10.4g % 10.4g % 10.4g]\n",
 		 fv->grad_SH[0], fv->grad_SH[1], fv->grad_SH[2]);
-	  */
+	  
 	  printf( "\n");
-	}
+	  } */
     }
 
   return;
@@ -686,13 +686,13 @@ get_local_qtensor(double q[DIM][DIM])
     }
 
   /* Debugging lines */
-  if (print)
+  /*if (print)
     {
       printf("BASE LOCATION:\n");
       printf("    + % 10.4g % 10.4g % 10.4g +\n", E[0][0], E[0][1], E[0][2]);
       printf("E = | % 10.4g % 10.4g % 10.4g |\n", E[1][0], E[1][1], E[1][2]);
       printf("    + % 10.4g % 10.4g % 10.4g +\n", E[2][0], E[2][1], E[2][2]);
-    }
+      } */
 
   /* Solve for the three principal flow directions */
   diagonalize_symmetric_tensor(E, v_comp, v_vort, v_tens, ev, print);
@@ -1288,11 +1288,11 @@ hydro_qtensor_flux (struct Species_Conservation_Terms *st,
   dbl grad_phi_j_VQVt[DIM]; /* grad(phi_j) . (V Q V^t) */
   dbl VQVt_grad_phi_j[DIM]; /* (V Q V^t) . grad(phi_j) */
 
-  if(!pd->e[VORT_DIR3] && 0)
+  /*if(!pd->e[VORT_DIR3] && 0)
     {
       EH(-1, "Cannot use QTENSOR without the VORT_DIR{1,2,3} equations/variables active!");
       exit(-1);
-    }
+      }*/
 
   if(MMH_ip < 0)
     {
@@ -1648,11 +1648,11 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
 
   dbl d_div_gdYVQVt_dvd[DIM][DIM][MDE];
 
-  if(!pd->e[VORT_DIR1])
+  /*if(!pd->e[VORT_DIR1])
     {
       EH(-1, "Cannot use this QTENSOR model without the VORT_DIR{1,2,3} equations/variables active!");
       exit(-1);
-    }
+      }*/
 
 
   /* Set up some convenient local variables and pointers */
@@ -1861,24 +1861,32 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
    */
 
 
-  for ( a=0; a<VIM; a++)
+  /*for ( a=0; a<VIM; a++)
     {
       for ( b=0; b<VIM; b++)
 	{
 	  qtensor_loc[a][b] = (dbl)delta(a,b) -
 	    0.5 * fv->vd[a] * fv->vd[b];
 	}
+	}*/
+
+  /* assume a diagonal Q tensor */
+  memset(qtensor_loc,  0, DIM*DIM*sizeof(dbl) );
+  for ( a=0; a<DIM; a++)
+    {
+      qtensor_loc[a][a] = mp->q_diffusivity[w][a];
+      div_q[a]=0.;
     }
- 
-  memset(div_q, 0, DIM*sizeof(dbl));
-  for ( a=0; a<VIM; a++)
+  
+  // memset(div_q, 0, DIM*sizeof(dbl));
+  /*for ( a=0; a<VIM; a++)
     {
       div_q[a] = -0.5*fv->vd[a]*fv->div_vd;
       for ( b=0; b<VIM; b++)
 	{
 	  div_q[a] -= 0.5*fv->vd[b] * fv->grad_vd[b][a];
 	}
-    }
+	}*/
  
 
   memset(grad_Y_VQVt, 0, DIM*sizeof(dbl));
@@ -1894,8 +1902,6 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
 	VQVt_grad_Y[a] += qtensor_loc[a][i] * grad_Y[w][i];
       }
 
-
-
   /* Compute div(gammadot * Y * (V Q V^t)) */
   memset(div_gdYVQVt, 0, DIM*sizeof(dbl));
   for(a = 0; a < DIM; a++)
@@ -1904,7 +1910,6 @@ hydro_qtensor_flux_new (struct Species_Conservation_Terms *st,
       div_gdYVQVt[a] += gammadot * grad_Y_VQVt[a];
       div_gdYVQVt[a] += gammadot * Y[w] * div_q[a];
     }
-
 
   /* Assemble residual */
   memset(st->diff_flux[w], 0, DIM*sizeof(dbl));

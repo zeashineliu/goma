@@ -4414,9 +4414,25 @@ suspension_balance(struct Species_Conservation_Terms *st,
     {
       for ( a=0; a<dim; a++)
 	{
-	  Dd[a]  = mp->u_fdiffusivity[w][0] * 
-	    exp(-mp->u_fdiffusivity[w][1] * Y[w]);
-	  dDd_dy[a] = -mp->u_fdiffusivity[w][1] * Dd[a];
+	  if(Y[w] >= 0. && Y[w] <= maxpack)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] * 
+		(exp(-mp->u_fdiffusivity[w][1] * Y[w])
+		 +exp(-mp->u_fdiffusivity[w][1] * fabs (maxpack -Y[w])));
+	      dDd_dy[a] = -mp->u_fdiffusivity[w][0] * mp->u_fdiffusivity[w][1]*
+		(exp(-mp->u_fdiffusivity[w][1] * Y[w])
+		 -exp(-mp->u_fdiffusivity[w][1] * fabs (maxpack -Y[w])));
+	    }
+	  else if(Y[w] < 0.)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] ;
+	      dDd_dy[a] = 0.;
+	    }
+	  else if(Y[w] > maxpack)
+	    {
+	      Dd[a]  = mp->u_fdiffusivity[w][0] ;
+	      dDd_dy[a] = 0.;
+	    }
 	}
     }    
   
@@ -4430,8 +4446,10 @@ suspension_balance(struct Species_Conservation_Terms *st,
   if (mp->GravDiffType[w] == RICHARDSON_ZAKI )
     {
       f = pow(1.-Y[w],rzexp)/mu;
+      f *= (1.-Y[w]/maxpack);
       df_dmu =  -f/mu; 
       df_dy = -rzexp*f/(1.-Y[w]);
+      df_dy += -pow(1.-Y[w],rzexp)/(mu*maxpack);
     }
   else
     {
@@ -5172,6 +5190,11 @@ divergence_particle_stress(dbl div_tau_p[DIM],               /* divergence of th
 	  qtensor[a][a] = mp->u_qdiffusivity[w][a];
 	  div_qtensor[a]=0.;
 	}
+      // TEST ------------------
+      qtensor[0][0] = 1.;
+      qtensor[1][1] = 1.;
+      qtensor[2][2] = 0.5;
+      // END TEST
       memset(d_div_q_dmesh, 0, DIM*DIM*MDE*sizeof(dbl));
       memset(d_div_q_dvd, 0, DIM*DIM*MDE*sizeof(dbl));
       memset(d_qtensor_dvd, 0, DIM*DIM*DIM*MDE*sizeof(dbl));
