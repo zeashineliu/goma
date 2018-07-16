@@ -13217,8 +13217,8 @@ assemble_invariant ( double tt,	/* parameter to vary time integration from
 			      
 		      if ( pd->e[eqn] & T_ADVECTION )
 			{
-			  if(gd != 0.)
-			    advection = -0.25*d_I2_dv[a][j]/gd;
+			  if(gd > 0.001)  /* gd = sqrt(1/2 * I2) + 0.001 */
+			    advection = -0.25*d_I2_dv[a][j]/(gd-0.001);
 			  else
 			    advection = 0.;
 

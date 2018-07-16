@@ -12311,24 +12311,28 @@ setup_table_BC(FILE *ifp,
       strcpy( BC_Type->table->t_name[0],"TIME");
       BC_Type->table->t_index[0] = -1;
       /*BC_Type->desc->sens[MESH_DISPLACEMENT1] = 1;      */
+      BC_Type->table->columns = 2;
     }
   else if( strcmp( input, "X") == 0 )
     {
       strcpy( BC_Type->table->t_name[0],"X");
       BC_Type->table->t_index[0] = 0;
       BC_Type->desc->sens[MESH_DISPLACEMENT1] = 1;
+      BC_Type->table->columns = 2;
     }
   else if ( strcmp( input, "Y") == 0 )
     {
       strcpy( BC_Type->table->t_name[0],"Y");
       BC_Type->table->t_index[0] = 1;
       BC_Type->desc->sens[MESH_DISPLACEMENT2] = 1;
+      BC_Type->table->columns = 2;
     }
   else if ( strcmp( input, "Z") == 0 )
     {
       strcpy( BC_Type->table->t_name[0],"Z");
       BC_Type->table->t_index[0] = 2;
       BC_Type->desc->sens[MESH_DISPLACEMENT3] = 1;
+      BC_Type->table->columns = 2;
     }
   else if ( strcmp( input, "XY") == 0 )
     {

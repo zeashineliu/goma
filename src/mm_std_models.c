@@ -4447,14 +4447,14 @@ suspension_balance(struct Species_Conservation_Terms *st,
     {
       f = pow(1.-Y[w],rzexp)/mu;
       f *= (1.-Y[w]/maxpack);
-      df_dmu =  -f/mu; 
+      df_dmu =  -f/mu;
       df_dy = -rzexp*f/(1.-Y[w]);
       df_dy += -pow(1.-Y[w],rzexp)/(mu*maxpack);
     }
   else
     {
-      f = (1. - Y[w])/mu; 
-      df_dmu = -f/mu; 
+      f = (1. - Y[w])/mu;
+      df_dmu = -f/mu;
       df_dy = -1./mu;
     }
   
@@ -4483,6 +4483,8 @@ suspension_balance(struct Species_Conservation_Terms *st,
       st->diff_flux[w][a] = -M*div_tau_p[a];
       st->diff_flux[w][a] += M*Y[w]*mp->momentum_source[a]*del_rho; 
       st->diff_flux[w][a] += -Dd[a]*grad_Y[w][a];
+
+      st->diff_flux[w][a] = -M*div_tau_p[a];
     }
   
   if (af->Assemble_Jacobian)
@@ -4497,7 +4499,7 @@ suspension_balance(struct Species_Conservation_Terms *st,
 	      
 	      c_term += -M*d_div_tau_p_dy[a][w][j];
 	      
-	      mu_term = dM_dmu*d_mu->C[w][j]*div_tau_p[a];
+	      mu_term = -dM_dmu*d_mu->C[w][j]*div_tau_p[a];
 	      
 	      g_term = ((f+ df_dy*Y[w])*bf[var]->phi[j] + Y[w]*df_dmu *d_mu->C[w][j]);
 	      g_term *= Dg * mp->momentum_source[a]*del_rho;
@@ -4505,7 +4507,7 @@ suspension_balance(struct Species_Conservation_Terms *st,
 	      d_term = -bf[var]->grad_phi[j][a] * Dd[a] - grad_Y[w][a]*dDd_dy[a]*bf[var]->phi[j];
 	      
 	      st->d_diff_flux_dc[w][a] [w][j] = c_term + mu_term + g_term 
-		+ d_term;
+	      + d_term;
 	    }
 	  
 	  /* if filled_epoxy is used, there is a dependency of viscosity on
@@ -5191,9 +5193,9 @@ divergence_particle_stress(dbl div_tau_p[DIM],               /* divergence of th
 	  div_qtensor[a]=0.;
 	}
       // TEST ------------------
-      qtensor[0][0] = 1.;
+      /*qtensor[0][0] = 1.;
       qtensor[1][1] = 1.;
-      qtensor[2][2] = 0.5;
+      qtensor[2][2] = 0.5;*/
       // END TEST
       memset(d_div_q_dmesh, 0, DIM*DIM*MDE*sizeof(dbl));
       memset(d_div_q_dvd, 0, DIM*DIM*MDE*sizeof(dbl));
