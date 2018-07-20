@@ -105,6 +105,7 @@ PROTO((struct Species_Conservation_Terms *, /* st                            */
        dbl , 			/* time step parameter                       */
        dbl ,                    /* time step                                 */
        const dbl [DIM]));       /* element size                              */
+EXTERN void NPdiffusiontensor(double hematocrit, double SR, double Dtensor[]);
 
 EXTERN int hydro_flux_NP		/* mm_std_models.c                   */
 PROTO((struct Species_Conservation_Terms *, /* st                            */

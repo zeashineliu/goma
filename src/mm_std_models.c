@@ -3712,8 +3712,20 @@ hydro_flux(struct Species_Conservation_Terms *st,
       st->diff_flux[w][a] += -Y[w]*Y[w]*gammadot*(Dmu*grad_mu[a] + Dmu1*grad_mu1[a])/mu;
 
       st->diff_flux[w][a] += (Dg*f*Y[w])*mp->momentum_source[a]/mu0; 
-      st->diff_flux[w][a] += -Dd[a]*grad_Y[w][a];
+      st->diff_flux[w][a] += -Dd[a]*grad_Y[w][a];     
+
     }
+
+  
+  /* NP diffusion tensor based on particle approach */
+  /* Author: Z. Liu "Leo" 07/17/2018 */
+  double Dtensor[4]; for(j=0;j<4;j++) Dtensor[j]=0;
+  NPdiffusiontensor(Y[w], gammadot, Dtensor);
+  st->diff_flux[w][0] = Dtensor[0]*grad_Y[w][0] + Dtensor[3]*grad_Y[w][1];
+  st->diff_flux[w][1] = Dtensor[1]*grad_Y[w][1] + Dtensor[3]*grad_Y[w][0];
+  st->diff_flux[w][2] = Dtensor[2]*grad_Y[w][2];
+  for(a=0;a<dim;a++) st->diff_flux[w][a] *= 1/0.7; //Victor JFM 1998
+  
 
   if (af->Assemble_Jacobian)
     {
@@ -3895,6 +3907,63 @@ hydro_flux(struct Species_Conservation_Terms *st,
 
   return(status);
 }
+
+/********************************************************************
+*
+* NP diffusion tensor directly characterized 
+* based on the RBC-NP scale model developed by Leo at Georgia Tech
+*
+* Author: Z. Liu  "Leo"   07/17/2018
+*
+********************************************************************/
+void NPdiffusiontensor(double hematocrit, double SR, double Dtensor[])
+{
+  // units: g, mm, s
+  int i;
+  double G = 6.3e-3;  //dynes/cm or g/s^2
+  double Temp = 310; //K
+  double kB = 1.38e-14; //mm^2 g /k s^2
+  double PIvalue = 3.1415926;
+  double mu = 1.2e-3; //g/mm/s 
+  double a_NP = 50e-6;   //mm  100nm
+  double a_RBC = 2900e-6; //mm  2.9um
+  double D_B = 0.0;
+  //double D_RBC = 0.0;
+  double Ht2Cap = 0.0;
+  double phiga2 = hematocrit * SR * a_RBC * a_RBC;
+  
+  D_B = kB * Temp / (6 * PIvalue * mu * a_NP);
+  double Cconst[8];
+  Cconst[0] = 0.26;
+  Cconst[1] = 4.2e-4;
+  Cconst[2] = 0.031;
+  Cconst[3] = 2.2e-4;
+  Cconst[4] = 0.024;
+  Cconst[5] = 7.1e-4;
+  Cconst[6] = 0;
+  Cconst[7] = 0.033;
+    
+  //Dxx:D[0],Dyy:D[1],Dzz:D[2],Dxy:D[3]
+  if (SR <= 100) {
+    Dtensor[0] = Cconst[0] * phiga2;
+    Dtensor[1] = Cconst[2] * phiga2;
+    Dtensor[2] = Cconst[4] * phiga2;
+    Dtensor[3] = Cconst[6] * phiga2;
+    for (i=0;i<3;i++) Dtensor[i] += D_B;
+  }
+  else if (SR > 100) {
+  double Cap = mu * SR * a_RBC / G;
+    Ht2Cap = pow(hematocrit,2)*Cap;
+    Dtensor[0] = Cconst[1] * hematocrit * pow(Cap,2*hematocrit) * phiga2;
+    Dtensor[1] = Cconst[3] * pow(Cap,0.2) * phiga2;
+    if(Ht2Cap != 0) Dtensor[2] = Cconst[5] * pow(Ht2Cap,-0.2) * phiga2;
+    if(Ht2Cap == 0) Dtensor[2] = 0;
+    Dtensor[3] = -1.0 * Cconst[7] * phiga2; 
+    for(i=0;i<3;i++) Dtensor[i] += D_B;
+  }
+}
+
+
 
 /******************************************************************************
 *
